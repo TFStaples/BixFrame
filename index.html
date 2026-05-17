@@ -960,10 +960,12 @@ function Dashboard({ user, profile }) {
     };
     const createMeeting = async (meetingType) => {
         try {
-            const today = new Date().toISOString().slice(0, 10);
+            const now = new Date();
+            const today = now.toISOString().slice(0, 10);
             const { data, error } = await sb.from('meetings').insert({
                 meeting_type: meetingType,
                 meeting_date: today,
+                started_at: now.toISOString(),
                 chair_user_id: user.id,
                 status: 'in-progress',
                 created_by: user.id,
@@ -1954,15 +1956,19 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     const [saveStatus, setSaveStatus] = useState({}); // { entryKey: 'pending' | 'saving' | 'saved' | 'error' }
     const [showAddAction, setShowAddAction] = useState(false);
     const [showRoundUp, setShowRoundUp] = useState(false);
-    // Load meeting + entries + actions
+    const [attendees, setAttendees] = useState([]); // [{id?, user_id, name_fallback, present}]
+    const [showAttendance, setShowAttendance] = useState(false);
+    const [handoffs, setHandoffs] = useState([]); // cross-meeting handoff records
+    // Load meeting + entries + actions + attendees
     useEffect(() => {
         let mounted = true;
         (async () => {
             try {
-                const [meetingRes, entriesRes, actionsRes] = await Promise.all([
+                const [meetingRes, entriesRes, actionsRes, attRes] = await Promise.all([
                     sb.from('meetings').select('*').eq('id', meetingId).single(),
                     sb.from('meeting_entries').select('*').eq('meeting_id', meetingId),
                     sb.from('actions').select('*').eq('meeting_id', meetingId).order('created_at'),
+                    sb.from('meeting_attendees').select('*').eq('meeting_id', meetingId),
                 ]);
                 if (!mounted)
                     return;
@@ -1977,7 +1983,24 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
                 (entriesRes.data || []).forEach(e => { entriesMap[e.project_id] = e; });
                 setEntries(entriesMap);
                 setActions(actionsRes.data || []);
+                setAttendees((attRes && attRes.data) ? attRes.data : []);
                 setLoading(false);
+                // Handoffs: load any addressed TO this meeting's department for
+                // its projects (incoming), plus any FROM this meeting (outgoing,
+                // so the chair can see what they've already flagged).
+                const mtg = meetingRes.data;
+                const projIds = (entriesRes.data || []).map(e => e.project_id);
+                try {
+                    const { data: hoData } = await sb.from('meeting_handoffs')
+                        .select('*')
+                        .or(`to_department.eq.${mtg.meeting_type},from_meeting_id.eq.${meetingId}`)
+                        .order('created_at', { ascending: false });
+                    if (mounted && hoData)
+                        setHandoffs(hoData);
+                }
+                catch (_) {
+                    /* handoffs table may be empty/absent on older schemas */
+                }
             }
             catch (e) {
                 if (mounted) {
@@ -2027,6 +2050,144 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
         keys.sort((a, b) => a === '—' ? 1 : b === '—' ? -1 : a.localeCompare(b));
         return keys;
     }, [meetingProjectGroups]);
+    // ----- ATTENDANCE -----
+    // The project team for this meeting = every user whose initials appear in
+    // any team-role field across the meeting's projects. These are the default
+    // attendees. The chair can also add any other org member.
+    const projectTeamUserIds = useMemo(() => {
+        const initialsSet = new Set();
+        const fields = ['owner_initials', 'pre_con_lead_initials', 'designer_initials', 'technical_designer_initials', 'furniture_consultant_initials', 'project_manager_initials'];
+        meetingProjects.forEach(p => fields.forEach(f => { if (p[f])
+            initialsSet.add(p[f]); }));
+        const ids = new Set();
+        users.forEach(u => { if (u.initials && initialsSet.has(u.initials))
+            ids.add(u.id); });
+        return ids;
+    }, [meetingProjects, users]);
+    const isChair = meeting && currentUser && meeting.chair_user_id === currentUser.id;
+    // Seed attendance defaults from the project team the first time the chair
+    // opens the register on a meeting that has none recorded yet.
+    const seedAttendanceIfEmpty = async () => {
+        if (attendees.length > 0 || projectTeamUserIds.size === 0)
+            return;
+        try {
+            const rows = [...projectTeamUserIds].map(uid => ({ meeting_id: meetingId, user_id: uid, present: true }));
+            const { data, error } = await sb.from('meeting_attendees').insert(rows).select();
+            if (error)
+                throw error;
+            setAttendees(data || []);
+        }
+        catch (e) {
+            console.error('Failed to seed attendance', e);
+        }
+    };
+    const toggleAttendeePresent = async (att) => {
+        try {
+            const { data, error } = await sb.from('meeting_attendees').update({ present: !att.present }).eq('id', att.id).select().single();
+            if (error)
+                throw error;
+            setAttendees(prev => prev.map(a => a.id === att.id ? data : a));
+        }
+        catch (e) {
+            alert('Failed to update attendance: ' + e.message);
+        }
+    };
+    const addAttendee = async (userId) => {
+        if (attendees.some(a => a.user_id === userId))
+            return;
+        try {
+            const { data, error } = await sb.from('meeting_attendees').insert({ meeting_id: meetingId, user_id: userId, present: true }).select().single();
+            if (error)
+                throw error;
+            setAttendees(prev => [...prev, data]);
+        }
+        catch (e) {
+            alert('Failed to add attendee: ' + e.message);
+        }
+    };
+    const removeAttendee = async (att) => {
+        try {
+            const { error } = await sb.from('meeting_attendees').delete().eq('id', att.id);
+            if (error)
+                throw error;
+            setAttendees(prev => prev.filter(a => a.id !== att.id));
+        }
+        catch (e) {
+            alert('Failed to remove attendee: ' + e.message);
+        }
+    };
+    // ----- CROSS-MEETING HANDOFFS -----
+    const createHandoff = async (projectId, toDepartment, note) => {
+        if (!note || !note.trim())
+            return;
+        try {
+            const { data, error } = await sb.from('meeting_handoffs').insert({
+                project_id: projectId,
+                from_meeting_id: meetingId,
+                from_meeting_type: meeting.meeting_type,
+                to_department: toDepartment,
+                note: note.trim(),
+                created_by: currentUser ? currentUser.id : null,
+                status: 'open',
+            }).select().single();
+            if (error)
+                throw error;
+            setHandoffs(prev => [data, ...prev]);
+        }
+        catch (e) {
+            alert('Failed to flag for another team: ' + e.message);
+        }
+    };
+    const acknowledgeHandoff = async (handoff) => {
+        // Chair-only — the chair of the receiving meeting owns whether it's actioned.
+        if (!isChair) {
+            alert('Only the chair of this meeting can acknowledge a handoff.');
+            return;
+        }
+        try {
+            const { data, error } = await sb.from('meeting_handoffs').update({
+                status: 'acknowledged',
+                acknowledged_by: currentUser ? currentUser.id : null,
+                acknowledged_at: new Date().toISOString(),
+            }).eq('id', handoff.id).select().single();
+            if (error)
+                throw error;
+            setHandoffs(prev => prev.map(h => h.id === handoff.id ? data : h));
+        }
+        catch (e) {
+            alert('Failed to acknowledge: ' + e.message);
+        }
+    };
+    const convertHandoffToAction = async (handoff) => {
+        if (!isChair) {
+            alert('Only the chair of this meeting can convert a handoff to an action.');
+            return;
+        }
+        try {
+            const { data: act, error: actErr } = await sb.from('actions').insert({
+                project_id: handoff.project_id,
+                meeting_id: meetingId,
+                description: handoff.note,
+                status: 'open',
+                created_by: currentUser ? currentUser.id : null,
+            }).select().single();
+            if (actErr)
+                throw actErr;
+            setActions(prev => [...prev, act]);
+            // Acknowledge the handoff as part of converting it
+            const { data: h, error: hErr } = await sb.from('meeting_handoffs').update({
+                status: 'acknowledged',
+                acknowledged_by: currentUser ? currentUser.id : null,
+                acknowledged_at: new Date().toISOString(),
+            }).eq('id', handoff.id).select().single();
+            if (hErr)
+                throw hErr;
+            setHandoffs(prev => prev.map(x => x.id === handoff.id ? h : x));
+        }
+        catch (e) {
+            alert('Failed to convert to action: ' + e.message);
+        }
+    };
     // Save entry field with debounce
     const saveTimers = useRef({});
     const updateEntryField = useCallback((projectId, field, value) => {
@@ -2210,7 +2371,10 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     const activeProject = activeProjectId ? meetingProjects.find(p => p.id === activeProjectId) : null;
     const activeEntry = activeProject ? entries[activeProject.id] : null;
     const projectActions = activeProject ? actions.filter(a => a.project_id === activeProject.id) : [];
-    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.grip, padding: '12px 32px', borderBottom: '2px solid ' + C.cord } }, React.createElement("div", { style: { maxWidth: 1400, margin: '0 auto' } }, React.createElement("button", { onClick: onBack, style: { background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: 11, cursor: 'pointer', padding: 0, marginBottom: 6, fontFamily: "'DM Sans', system-ui, sans-serif", letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 } }, "\u2190 All meetings"), React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.white, fontWeight: 700, letterSpacing: '0.01em' } }, meetingCfg.label), React.createElement("div", { style: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 3 } }, formatMeetingDateLong(meeting.meeting_date), " \u00B7 ", isReadOnly ? 'Closed' : 'In progress — saves automatically'))))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 1400, margin: '0 auto' } }, React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '280px 1fr', gap: 20 } }, React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden', alignSelf: 'flex-start', position: 'sticky', top: 80 } }, React.createElement("div", { style: { background: C.red, padding: '9px 14px', borderBottom: `1px solid ${C.redDark}`, fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, React.createElement("span", { style: { color: C.white } }, "Projects"), " (", meetingProjects.length, ")"), React.createElement("div", { style: { maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' } }, meetingGroupKeys.map(groupKey => (React.createElement("div", { key: groupKey }, React.createElement("div", { style: { padding: '6px 14px', background: C.redSoft, borderBottom: `1px solid ${C.redMid}`, fontSize: 10, color: C.red, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', justifyContent: 'space-between' } }, React.createElement("span", null, groupKey === '—' ? `Unassigned ${meetingCfg.groupLabel}` : groupKey), React.createElement("span", { style: { color: C.muted } }, meetingProjectGroups[groupKey].length)), meetingProjectGroups[groupKey].map(p => {
+    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.grip, padding: '12px 32px', borderBottom: '2px solid ' + C.cord } }, React.createElement("div", { style: { maxWidth: 1400, margin: '0 auto' } }, React.createElement("button", { onClick: onBack, style: { background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: 11, cursor: 'pointer', padding: 0, marginBottom: 6, fontFamily: "'DM Sans', system-ui, sans-serif", letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 } }, "\u2190 All meetings"), React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.white, fontWeight: 700, letterSpacing: '0.01em' } }, meetingCfg.label), React.createElement("div", { style: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 3 } }, formatMeetingDateLong(meeting.meeting_date), meeting.started_at && ` · ${new Date(meeting.started_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`, " \u00B7 ", isReadOnly ? 'Closed' : 'In progress — saves automatically')), React.createElement("button", { onClick: () => { setShowAttendance(true); seedAttendanceIfEmpty(); }, style: { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4, padding: '7px 14px', color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex', alignItems: 'center', gap: 7 } }, React.createElement("span", { style: { fontSize: 13 } }, "\uD83D\uDC65"), (() => {
+        const present = attendees.filter(a => a.present).length;
+        return attendees.length > 0 ? `Attendance · ${present}/${attendees.length}` : 'Attendance';
+    })())))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 1400, margin: '0 auto' } }, React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '280px 1fr', gap: 20 } }, React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden', alignSelf: 'flex-start', position: 'sticky', top: 80 } }, React.createElement("div", { style: { background: C.red, padding: '9px 14px', borderBottom: `1px solid ${C.redDark}`, fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, React.createElement("span", { style: { color: C.white } }, "Projects"), " (", meetingProjects.length, ")"), React.createElement("div", { style: { maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' } }, meetingGroupKeys.map(groupKey => (React.createElement("div", { key: groupKey }, React.createElement("div", { style: { padding: '6px 14px', background: C.redSoft, borderBottom: `1px solid ${C.redMid}`, fontSize: 10, color: C.red, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', justifyContent: 'space-between' } }, React.createElement("span", null, groupKey === '—' ? `Unassigned ${meetingCfg.groupLabel}` : groupKey), React.createElement("span", { style: { color: C.muted } }, meetingProjectGroups[groupKey].length)), meetingProjectGroups[groupKey].map(p => {
         const hasNote = entries[p.id] && (entries[p.id].pre_con_note || entries[p.id].design_note || entries[p.id].technical_note || entries[p.id].furniture_note || entries[p.id].graphic_note);
         const status = statusLookup[p.status];
         return (React.createElement("div", { key: p.id, onClick: () => setActiveProjectId(p.id), style: {
@@ -2220,13 +2384,13 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
                 background: activeProjectId === p.id ? C.redSoft : 'transparent',
                 borderBottom: `1px solid ${C.line}`,
             } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 } }, React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, "#", p.project_number)), hasNote && (React.createElement("span", { title: "Notes captured this meeting", style: { width: 7, height: 7, borderRadius: '50%', background: C.green, flexShrink: 0, marginTop: 5 } }))), status && (React.createElement("div", { style: { marginTop: 4 } }, React.createElement("span", { style: { display: 'inline-block', fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3, background: status.bg, color: status.fg } }, status.short)))));
-    })))))), React.createElement("div", null, !activeProject ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 48, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { fontSize: 14, marginBottom: 8 } }, "Select a project from the left to start capturing notes"), React.createElement("div", { style: { fontSize: 12 } }, "Notes auto-save as you type. Actions can be added at any time."))) : (React.createElement(ProjectCapturePane, { project: activeProject, entry: activeEntry, projectActions: projectActions, users: users, isReadOnly: isReadOnly, saveStatus: saveStatus[activeProject.id], meetingCfg: meetingCfg, latestNote: latestNotes ? latestNotes[activeProject.id] : null, keyDates: keyDates ? (keyDates[activeProject.id] || []) : [], isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onUpdateField: (field, value) => updateEntryField(activeProject.id, field, value), onAddAction: () => setShowAddAction(true), onUpdateAction: updateAction, onDeleteAction: deleteAction })))), React.createElement("div", { style: { marginTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 } }, React.createElement("div", null, isSenior && (React.createElement("button", { onClick: deleteMeeting, style: {
+    })))))), React.createElement("div", null, !activeProject ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 48, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { fontSize: 14, marginBottom: 8 } }, "Select a project from the left to start capturing notes"), React.createElement("div", { style: { fontSize: 12 } }, "Notes auto-save as you type. Actions can be added at any time."))) : (React.createElement(ProjectCapturePane, { project: activeProject, entry: activeEntry, projectActions: projectActions, users: users, isReadOnly: isReadOnly, saveStatus: saveStatus[activeProject.id], meetingCfg: meetingCfg, latestNote: latestNotes ? latestNotes[activeProject.id] : null, keyDates: keyDates ? (keyDates[activeProject.id] || []) : [], isSenior: isSenior, currentUser: currentUser, isChair: isChair, handoffs: handoffs.filter(h => h.project_id === activeProject.id), onCreateHandoff: createHandoff, onAcknowledgeHandoff: acknowledgeHandoff, onConvertHandoff: convertHandoffToAction, meetingType: meeting.meeting_type, onKeyDatesChange: onKeyDatesChange, onUpdateField: (field, value) => updateEntryField(activeProject.id, field, value), onAddAction: () => setShowAddAction(true), onUpdateAction: updateAction, onDeleteAction: deleteAction })))), React.createElement("div", { style: { marginTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 } }, React.createElement("div", null, isSenior && (React.createElement("button", { onClick: deleteMeeting, style: {
             padding: '7px 14px', background: 'transparent',
             color: C.redStatus, border: `1px solid ${C.redStatus}`,
             borderRadius: 3, cursor: 'pointer', fontSize: 12,
             fontWeight: 600, fontFamily: "'DM Sans', system-ui, sans-serif",
             letterSpacing: '0.03em',
-        } }, "Delete meeting"))), React.createElement("div", { style: { display: 'flex', gap: 8 } }, !isReadOnly && (React.createElement(React.Fragment, null, React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "Generate round-up (", actions.length, ")"), React.createElement("button", { onClick: closeMeeting, style: btnPrimary() }, "End meeting"))), isReadOnly && (React.createElement(React.Fragment, null, isSenior && React.createElement("button", { onClick: reopenMeeting, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: C.amber, color: C.amber }) }, "Reopen meeting"), React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "View round-up (", actions.length, ")"))))), actions.length > 0 && (React.createElement("div", { style: { marginTop: 16, background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { background: C.prussian, padding: '10px 16px', borderBottom: `1px solid ${C.prussianDark}`, fontSize: 10, color: C.prussianMid, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "All actions in this meeting (", actions.length, ")"), React.createElement("div", null, actions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: projects, isReadOnly: isReadOnly, onUpdate: updateAction, onDelete: deleteAction })))))), showAddAction && activeProject && (React.createElement(AddActionModal, { project: activeProject, users: users, onClose: () => setShowAddAction(false), onAdd: addAction })), showRoundUp && (React.createElement(RoundUpModal, { meeting: meeting, actions: actions, users: users, projects: projects, chairName: profile.display_name, onClose: () => setShowRoundUp(false) }))))));
+        } }, "Delete meeting"))), React.createElement("div", { style: { display: 'flex', gap: 8 } }, !isReadOnly && (React.createElement(React.Fragment, null, React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "Generate round-up (", actions.length, ")"), React.createElement("button", { onClick: closeMeeting, style: btnPrimary() }, "End meeting"))), isReadOnly && (React.createElement(React.Fragment, null, isSenior && React.createElement("button", { onClick: reopenMeeting, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: C.amber, color: C.amber }) }, "Reopen meeting"), React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "View round-up (", actions.length, ")"))))), actions.length > 0 && (React.createElement("div", { style: { marginTop: 16, background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { background: C.prussian, padding: '10px 16px', borderBottom: `1px solid ${C.prussianDark}`, fontSize: 10, color: C.prussianMid, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "All actions in this meeting (", actions.length, ")"), React.createElement("div", null, actions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: projects, isReadOnly: isReadOnly, onUpdate: updateAction, onDelete: deleteAction })))))), showAddAction && activeProject && (React.createElement(AddActionModal, { project: activeProject, users: users, onClose: () => setShowAddAction(false), onAdd: addAction })), showAttendance && (React.createElement(AttendancePanel, { attendees: attendees, users: users, projectTeamUserIds: projectTeamUserIds, isChair: isChair, isReadOnly: isReadOnly, onToggle: toggleAttendeePresent, onAdd: addAttendee, onRemove: removeAttendee, onClose: () => setShowAttendance(false) })), showRoundUp && (React.createElement(RoundUpModal, { meeting: meeting, actions: actions, users: users, projects: projects, chairName: profile.display_name, attendees: attendees, onClose: () => setShowRoundUp(false) }))))));
 }
 // ============================================================
 // KEY DATES SECTION — in meeting capture pane
@@ -2396,11 +2560,14 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
 // ============================================================
 // PROJECT CAPTURE PANE (within MeetingDetailView)
 // ============================================================
-function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly, saveStatus, meetingCfg, latestNote, keyDates, isSenior, currentUser, onKeyDatesChange, onUpdateField, onAddAction, onUpdateAction, onDeleteAction }) {
+function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly, saveStatus, meetingCfg, latestNote, keyDates, isSenior, currentUser, isChair, handoffs, onCreateHandoff, onAcknowledgeHandoff, onConvertHandoff, meetingType, onKeyDatesChange, onUpdateField, onAddAction, onUpdateAction, onDeleteAction }) {
     const cfg = meetingCfg || MEETING_TYPES['pre-con'];
     const status = statusLookup[project.status] || { label: '—', bg: '#EEE', fg: C.muted };
     const [showOtherNotes, setShowOtherNotes] = useState(false);
     const [showKeyDates, setShowKeyDates] = useState(false);
+    const [showHandoffForm, setShowHandoffForm] = useState(false);
+    const [handoffDept, setHandoffDept] = useState('');
+    const [handoffNote, setHandoffNote] = useState('');
     return (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 24 } }, React.createElement("div", { style: { marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 } }, React.createElement("div", null, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.red, fontWeight: 700 } }, project.name), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginTop: 4 } }, React.createElement("span", { style: { color: C.red, fontWeight: 600 } }, "#", project.project_number), project.address && React.createElement("span", null, " \u00B7 ", project.address)), React.createElement("div", { style: { marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' } }, [
         { label: 'Owner', field: 'owner_initials', value: project.owner_initials },
         { label: 'Pre-Con', field: 'pre_con_lead_initials', value: project.pre_con_lead_initials },
@@ -2418,7 +2585,17 @@ function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly,
                 border: `1px solid ${isHighlighted ? C.cord : C.line}`,
                 minWidth: 52,
             } }, React.createElement("span", { style: { fontSize: 7.5, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, color: isHighlighted ? C.cord : C.mist, lineHeight: 1.4 } }, r.label), React.createElement("span", { style: { fontSize: 13, fontWeight: 700, color: isHighlighted ? C.cord : C.text, lineHeight: 1.2 } }, r.value)));
-    }))), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 } }, React.createElement("span", { style: { background: status.bg, color: status.fg, padding: '4px 12px', borderRadius: 3, fontSize: 11, fontWeight: 700, fontFamily: "'DM Sans', system-ui, sans-serif", letterSpacing: '0.04em', textTransform: 'uppercase' } }, status.label), React.createElement(CapturePaneSaveIndicator, { status: saveStatus })))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.red, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 } }, cfg.primaryNote.label), React.createElement(NoteField, { label: "", value: entry === null || entry === void 0 ? void 0 : entry[cfg.primaryNote.field], onChange: (v) => onUpdateField(cfg.primaryNote.field, v), disabled: isReadOnly, placeholder: `Notes for ${cfg.short || cfg.label} team…`, rows: 5 })), cfg.extraEditableNote && (React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.red, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 } }, cfg.extraEditableNote.label), React.createElement(NoteField, { label: "", value: entry === null || entry === void 0 ? void 0 : entry[cfg.extraEditableNote.field], onChange: (v) => onUpdateField(cfg.extraEditableNote.field, v), disabled: isReadOnly, placeholder: "Snag and defect notes for this project\u2026", rows: 3 }))), cfg.secondaryNotes.length > 0 && (React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowOtherNotes(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, React.createElement("span", { style: { display: 'inline-block', transform: showOtherNotes ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showOtherNotes ? "Hide other department notes" : "Show other department notes", React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${cfg.secondaryNotes.length})`)), showOtherNotes && (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: cfg.secondaryNotes.length === 1 ? '1fr' : '1fr 1fr', gap: 10, marginTop: 10 } }, cfg.secondaryNotes.map(n => {
+    }))), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 } }, React.createElement("span", { style: { background: status.bg, color: status.fg, padding: '4px 12px', borderRadius: 3, fontSize: 11, fontWeight: 700, fontFamily: "'DM Sans', system-ui, sans-serif", letterSpacing: '0.04em', textTransform: 'uppercase' } }, status.label), React.createElement(CapturePaneSaveIndicator, { status: saveStatus })))), (() => {
+        const incoming = (handoffs || []).filter(h => h.to_department === meetingType && h.from_meeting_id !== null);
+        if (incoming.length === 0)
+            return null;
+        return React.createElement("div", { style: { marginBottom: 16 } }, incoming.map(h => {
+            const fromCfg = MEETING_TYPES[h.from_meeting_type] || { short: h.from_meeting_type };
+            const author = users.find(u => u.id === h.created_by);
+            const ack = h.status === 'acknowledged';
+            return React.createElement("div", { key: h.id, style: { background: ack ? C.bg : C.cordSoft, border: `1px solid ${ack ? C.line : C.cordMid}`, borderLeft: `3px solid ${ack ? C.mist : C.cord}`, borderRadius: 4, padding: '10px 14px', marginBottom: 8, opacity: ack ? 0.7 : 1 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: ack ? C.mist : C.cord } }, ack ? '\u2713 Acknowledged handoff' : '\u2691 Flagged for this team'), React.createElement("div", { style: { fontSize: 10, color: C.mist, whiteSpace: 'nowrap' } }, `from ${fromCfg.short || h.from_meeting_type}`, author && ` \u00B7 ${author.display_name}`, ` \u00B7 ${timeAgo(h.created_at)}`)), React.createElement("div", { style: { fontSize: 13, color: C.text, lineHeight: 1.5, marginBottom: ack ? 0 : 8 } }, h.note), !ack && isChair && React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("button", { onClick: () => onAcknowledgeHandoff(h), style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '5px 10px' }) }, "Acknowledge"), React.createElement("button", { onClick: () => onConvertHandoff(h), style: Object.assign(Object.assign({}, btnPrimary()), { fontSize: 11, padding: '5px 10px' }) }, "Convert to action")), !ack && !isChair && React.createElement("div", { style: { fontSize: 10, color: C.mist, fontStyle: 'italic' } }, "The chair of this meeting can acknowledge or convert this."), ack && h.acknowledged_by && React.createElement("div", { style: { fontSize: 10, color: C.mist, fontStyle: 'italic', marginTop: 4 } }, (() => { const ab = users.find(u => u.id === h.acknowledged_by); return ab ? `Acknowledged by ${ab.display_name}` : 'Acknowledged'; })()));
+        }));
+    })(), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.red, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 } }, cfg.primaryNote.label), React.createElement(NoteField, { label: "", value: entry === null || entry === void 0 ? void 0 : entry[cfg.primaryNote.field], onChange: (v) => onUpdateField(cfg.primaryNote.field, v), disabled: isReadOnly, placeholder: `Notes for ${cfg.short || cfg.label} team…`, rows: 5 })), cfg.extraEditableNote && (React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.red, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 } }, cfg.extraEditableNote.label), React.createElement(NoteField, { label: "", value: entry === null || entry === void 0 ? void 0 : entry[cfg.extraEditableNote.field], onChange: (v) => onUpdateField(cfg.extraEditableNote.field, v), disabled: isReadOnly, placeholder: "Snag and defect notes for this project\u2026", rows: 3 }))), cfg.secondaryNotes.length > 0 && (React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowOtherNotes(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, React.createElement("span", { style: { display: 'inline-block', transform: showOtherNotes ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showOtherNotes ? "Hide other department notes" : "Show other department notes", React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${cfg.secondaryNotes.length})`)), showOtherNotes && (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: cfg.secondaryNotes.length === 1 ? '1fr' : '1fr 1fr', gap: 10, marginTop: 10 } }, cfg.secondaryNotes.map(n => {
         var _a;
         const globalValue = latestNote === null || latestNote === void 0 ? void 0 : latestNote[n.field];
         const entryValue = entry === null || entry === void 0 ? void 0 : entry[n.field];
@@ -2433,7 +2610,13 @@ function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly,
                 fontStyle: displayValue ? 'normal' : 'italic',
                 minHeight: 36, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
             } }, displayValue || 'No notes created yet')));
-    }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 24, paddingTop: 20, borderTop: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.prussian, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Actions for ", project.name, " (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: btnSecondary() }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.muted, padding: 12, background: C.bg, borderRadius: 4, textAlign: 'center' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", null, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true }))))))));
+    }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 24, paddingTop: 20, borderTop: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.prussian, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Actions for ", project.name, " (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: btnSecondary() }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.muted, padding: 12, background: C.bg, borderRadius: 4, textAlign: 'center' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", null, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true }))))), !isReadOnly && (React.createElement("div", { style: { marginTop: 16, paddingTop: 14, borderTop: `1px dashed ${C.line}` } }, !showHandoffForm ? (React.createElement("button", { onClick: () => { setShowHandoffForm(true); setHandoffDept(''); setHandoffNote(''); }, style: { background: 'transparent', border: `1px solid ${C.cordMid}`, color: C.cord, borderRadius: 4, padding: '7px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", null, "\u2691"), "Flag for another team")) : (React.createElement("div", { style: { background: C.cordSoft, border: `1px solid ${C.cordMid}`, borderRadius: 4, padding: 14 } }, React.createElement("div", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.cord, marginBottom: 10 } }, "Flag something for another team"), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 8 } }, "This surfaces as a callout when that team's meeting next opens this project. Their chair can acknowledge it or convert it to an action."), React.createElement("div", { style: { marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4, fontWeight: 600 } }, "Which team?"), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, MEETING_TYPE_OPTIONS.filter(o => o.value !== meetingType).map(o => (React.createElement("button", { key: o.value, onClick: () => setHandoffDept(o.value), style: { padding: '5px 10px', fontSize: 11, fontWeight: 600, borderRadius: 3, cursor: 'pointer', border: `1px solid ${handoffDept === o.value ? C.cord : C.line}`, background: handoffDept === o.value ? C.cord : C.white, color: handoffDept === o.value ? '#fff' : C.text, fontFamily: "'DM Sans', system-ui, sans-serif" } }, o.label.replace(' Meeting', '')))))), React.createElement("textarea", { value: handoffNote, onChange: e => setHandoffNote(e.target.value), placeholder: "What does that team need to know or do?", rows: 3, style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', resize: 'vertical', marginBottom: 8 }) }), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("button", { onClick: () => { if (handoffDept && handoffNote.trim()) {
+            onCreateHandoff(project.id, handoffDept, handoffNote);
+            setShowHandoffForm(false);
+        } }, disabled: !handoffDept || !handoffNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { fontSize: 11, opacity: (!handoffDept || !handoffNote.trim()) ? 0.4 : 1 }) }, "Send flag"), React.createElement("button", { onClick: () => setShowHandoffForm(false), style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (handoffs || []).filter(h => h.from_meeting_type === meetingType && h.to_department !== meetingType).length > 0 && (React.createElement("div", { style: { marginTop: 12 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.mist, marginBottom: 6 } }, "Flagged from here"), (handoffs || []).filter(h => h.from_meeting_type === meetingType && h.to_department !== meetingType).map(h => {
+        const toCfg = MEETING_TYPES[h.to_department] || { short: h.to_department };
+        return React.createElement("div", { key: h.id, style: { fontSize: 11, color: C.muted, padding: '5px 0', borderBottom: `1px solid ${C.line}` } }, React.createElement("span", { style: { fontWeight: 600, color: C.text } }, `\u2192 ${toCfg.short || h.to_department}: `), h.note, React.createElement("span", { style: { color: h.status === 'acknowledged' ? C.green : C.amber, marginLeft: 6, fontWeight: 600 } }, h.status === 'acknowledged' ? '\u2713 acknowledged' : 'pending'));
+    }))))))));
 }
 function NoteField({ label, value, onChange, disabled, placeholder, rows }) {
     const [local, setLocal] = useState(value || '');
@@ -2588,7 +2771,25 @@ function AddActionModal({ project, users, onClose, onAdd }) {
 // ============================================================
 // ROUND-UP MODAL — generates per-recipient mailto links
 // ============================================================
-function RoundUpModal({ meeting, actions, users, projects, chairName, onClose }) {
+function AttendancePanel({ attendees, users, projectTeamUserIds, isChair, isReadOnly, onToggle, onAdd, onRemove, onClose }) {
+    const [showAddList, setShowAddList] = useState(false);
+    const userById = useMemo(() => {
+        const m = {};
+        users.forEach(u => { m[u.id] = u; });
+        return m;
+    }, [users]);
+    const attendeeUserIds = new Set(attendees.map(a => a.user_id));
+    const addable = users.filter(u => !attendeeUserIds.has(u.id) && u.active !== false);
+    const present = attendees.filter(a => a.present).length;
+    const canEdit = isChair && !isReadOnly;
+    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.25)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 420, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, "Attendance"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 18 } }, attendees.length > 0 ? `${present} of ${attendees.length} present` : 'No attendees recorded yet', !canEdit && React.createElement("span", { style: { display: 'block', marginTop: 6, fontStyle: 'italic', color: C.mist } }, isReadOnly ? 'Meeting closed — register is read-only.' : 'Only the meeting chair can edit attendance.')), attendees.length === 0 ? (React.createElement("div", { style: { fontSize: 13, color: C.muted, background: C.bg, padding: 16, borderRadius: 4, textAlign: 'center' } }, "The register seeds from the project team when the chair opens it. If the project team have no linked user accounts yet, add attendees manually below.")) : (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, attendees.map(att => {
+        const u = userById[att.user_id];
+        const name = u ? u.display_name : (att.name_fallback || 'Unknown');
+        const isTeam = projectTeamUserIds.has(att.user_id);
+        return (React.createElement("div", { key: att.id, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 4, background: att.present ? C.cordSoft : C.bg, border: `1px solid ${att.present ? C.cordMid : C.line}` } }, React.createElement("button", { onClick: () => canEdit && onToggle(att), disabled: !canEdit, title: canEdit ? (att.present ? 'Mark absent' : 'Mark present') : '', style: { width: 22, height: 22, borderRadius: '50%', border: `2px solid ${att.present ? C.cord : C.mist}`, background: att.present ? C.cord : 'transparent', cursor: canEdit ? 'pointer' : 'default', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, padding: 0 } }, att.present ? '\u2713' : ''), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.text } }, name), React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 1 } }, isTeam ? 'Project team' : 'Added', att.present ? '' : ' \u00B7 absent')), canEdit && !isTeam && React.createElement("button", { onClick: () => onRemove(att), title: "Remove", style: { background: 'transparent', border: 'none', color: C.mist, cursor: 'pointer', fontSize: 14, padding: '0 2px' } }, "\u00D7")));
+    }))), canEdit && (React.createElement("div", { style: { marginTop: 18 } }, !showAddList ? (React.createElement("button", { onClick: () => setShowAddList(true), style: Object.assign(Object.assign({}, btnSecondary()), { width: '100%' }) }, "+ Add someone else")) : (React.createElement("div", { style: { border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '8px 12px', background: C.bg, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted } }, "Add an organisation member"), addable.length === 0 ? (React.createElement("div", { style: { padding: 12, fontSize: 12, color: C.muted, fontStyle: 'italic' } }, "Everyone is already on the register.")) : (addable.map(u => (React.createElement("button", { key: u.id, onClick: () => { onAdd(u.id); }, style: { display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', background: 'transparent', border: 'none', borderBottom: `1px solid ${C.line}`, cursor: 'pointer', fontSize: 13, color: C.text, fontFamily: "'DM Sans', system-ui, sans-serif" }, onMouseEnter: e => e.currentTarget.style.background = C.cordSoft, onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, u.display_name, u.initials && React.createElement("span", { style: { color: C.mist, marginLeft: 6 } }, `(${u.initials})`))))), React.createElement("button", { onClick: () => setShowAddList(false), style: { display: 'block', width: '100%', padding: '8px', background: C.bg, border: 'none', borderTop: `1px solid ${C.line}`, cursor: 'pointer', fontSize: 11, color: C.muted, fontWeight: 600 } }, "Done"))))))));
+}
+function RoundUpModal({ meeting, actions, users, projects, chairName, attendees, onClose }) {
     const meetingLabel = (MEETING_TYPES[meeting.meeting_type] || { label: meeting.meeting_type }).label;
     // Group actions by recipient
     const grouped = useMemo(() => {
