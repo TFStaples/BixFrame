@@ -2096,8 +2096,19 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     };
     const updateAction = async (actionId, updates) => {
         try {
+            // Centrally stamp completion attribution so every close path
+            // (ActionRow list, per-project list, etc.) records who did it.
+            const finalUpdates = Object.assign({}, updates);
+            if (updates.status === 'closed') {
+                if (finalUpdates.completed_at === undefined)
+                    finalUpdates.completed_at = new Date().toISOString();
+                finalUpdates.completed_by = currentUser ? currentUser.id : null;
+            }
+            else if (updates.status === 'open') {
+                finalUpdates.completed_by = null;
+            }
             const { data, error } = await sb.from('actions')
-                .update(updates)
+                .update(finalUpdates)
                 .eq('id', actionId)
                 .select()
                 .single();
