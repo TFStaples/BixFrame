@@ -2589,6 +2589,7 @@ function AddActionModal({ project, users, onClose, onAdd }) {
 // ROUND-UP MODAL — generates per-recipient mailto links
 // ============================================================
 function RoundUpModal({ meeting, actions, users, projects, chairName, onClose }) {
+    const meetingLabel = (MEETING_TYPES[meeting.meeting_type] || { label: meeting.meeting_type }).label;
     // Group actions by recipient
     const grouped = useMemo(() => {
         const byKey = {}; // key = email or name fallback
@@ -2617,11 +2618,11 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, onClose })
         return Object.values(byKey);
     }, [actions, users]);
     const buildEmail = (recipient) => {
-        const subject = `BixFrame Round-up — ${formatMeetingDate(meeting.meeting_date)} — Your Actions`;
+        const subject = `${meetingLabel} Round-up — ${formatMeetingDate(meeting.meeting_date)} — Your Actions`;
         const lines = [];
         lines.push(`Hi ${recipient.name.split(' ')[0]},`);
         lines.push('');
-        lines.push(`Following today's Monday round-up meeting, here are the actions assigned to you:`);
+        lines.push(`Following the ${meetingLabel} on ${formatMeetingDateLong(meeting.meeting_date)}, here are the actions assigned to you:`);
         lines.push('');
         recipient.actions.forEach(a => {
             lines.push(`— ${a.description}`);
@@ -2645,7 +2646,8 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, onClose })
     };
     const buildAllEmailsBody = () => {
         const lines = [];
-        lines.push(`BixFrame Round-up — ${formatMeetingDateLong(meeting.meeting_date)}`);
+        lines.push(`${meetingLabel} — Round-up`);
+        lines.push(`${formatMeetingDateLong(meeting.meeting_date)}`);
         lines.push('');
         lines.push(`${actions.length} action${actions.length === 1 ? '' : 's'} across ${grouped.length} ${grouped.length === 1 ? 'person' : 'people'}.`);
         lines.push('');
@@ -2674,7 +2676,7 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, onClose })
             alert('No recipients have an email address on file.');
             return;
         }
-        const subject = `BixFrame Round-up — ${formatMeetingDate(meeting.meeting_date)} — Meeting Actions`;
+        const subject = `${meetingLabel} Round-up — ${formatMeetingDate(meeting.meeting_date)} — Meeting Actions`;
         const params = new URLSearchParams({ subject, body: buildAllEmailsBody() });
         window.location.href = `mailto:${encodeURIComponent(emails.join(','))}?${params.toString().replace(/\+/g, '%20')}`;
     };
@@ -2708,13 +2710,13 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, onClose })
         w.document.close();
     };
     return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto' } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 } }, React.createElement("div", null, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "Round-up emails"), React.createElement("div", { style: { fontSize: 13, color: C.muted, marginTop: 4 } }, grouped.length, " recipient", grouped.length === 1 ? '' : 's', " \u00B7 ", actions.length, " action", actions.length === 1 ? '' : 's', " from ", formatMeetingDateLong(meeting.meeting_date))), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), grouped.length > 0 && (React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } }, React.createElement("button", { onClick: emailAllRecipients, style: btnPrimary() }, "Email all attendees"), React.createElement("button", { onClick: () => { navigator.clipboard.writeText(buildAllEmailsBody()); alert('All actions copied to clipboard.'); }, style: btnSecondary() }, "Copy all"), React.createElement("button", { onClick: exportMinutes, style: btnSecondary() }, "Export minutes"))), grouped.length === 0 ? (React.createElement("div", { style: { background: C.bg, padding: 24, borderRadius: 4, textAlign: 'center', color: C.muted, fontSize: 13 } }, "No actions assigned in this meeting. Add some actions before generating round-ups.")) : (React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 14, background: C.amberLight, padding: 10, borderRadius: 4, borderLeft: `3px solid ${C.amber}` } }, "Click \"Open email\" for each recipient. Your mail client opens with the message pre-filled \u2014 just click send. Recipients without a known email address show the name only; copy the message into a new email manually."), grouped.map((r, idx) => (React.createElement("div", { key: idx, style: { border: `1px solid ${C.line}`, borderRadius: 6, padding: 14, marginBottom: 10 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 14, fontWeight: 600, color: C.text } }, r.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, r.email || 'No email on file')), React.createElement("div", { style: { display: 'flex', gap: 6 } }, r.email && (React.createElement("a", { href: buildEmail(r), style: Object.assign(Object.assign({}, btnPrimary()), { textDecoration: 'none', display: 'inline-block' }) }, "Open email")), React.createElement("button", { onClick: () => {
-            const subject = `BixFrame Round-up — ${formatMeetingDate(meeting.meeting_date)} — Your Actions`;
+            const subject = `${meetingLabel} Round-up — ${formatMeetingDate(meeting.meeting_date)} — Your Actions`;
             const lines = [];
             lines.push(`Subject: ${subject}`);
             lines.push('');
             lines.push(`Hi ${r.name.split(' ')[0]},`);
             lines.push('');
-            lines.push(`Following today's Monday round-up meeting, here are the actions assigned to you:`);
+            lines.push(`Following the ${meetingLabel} on ${formatMeetingDateLong(meeting.meeting_date)}, here are the actions assigned to you:`);
             lines.push('');
             r.actions.forEach(a => {
                 lines.push(`— ${a.description}`);
