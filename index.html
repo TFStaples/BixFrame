@@ -236,11 +236,11 @@ const MEETING_TYPES = {
     },
 };
 const MEETING_TYPE_OPTIONS = [
-    { value: 'pre-con', label: 'Pre-Con Meeting' },
-    { value: 'design', label: 'Design Meeting' },
-    { value: 'technical', label: 'Technical Meeting' },
-    { value: 'furniture', label: 'Furniture Meeting' },
-    { value: 'pm', label: 'Project Manager Meeting' },
+    { value: 'pre-con', label: 'Pre-Con Meeting', category: 'Resource' },
+    { value: 'design', label: 'Design Meeting', category: 'Resource' },
+    { value: 'technical', label: 'Technical Meeting', category: 'Resource' },
+    { value: 'furniture', label: 'Furniture Meeting', category: 'Resource' },
+    { value: 'pm', label: 'Project Manager Meeting', category: 'Resource' },
 ];
 const statusLookup = STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
 // ============================================================
@@ -1630,14 +1630,22 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
         return (React.createElement("main", { style: { padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 4, maxWidth: 500, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load actions: ", error)));
     // Pill definitions — always show all so they're always clickable
     const filterPills = [
-        { key: 'overdue', label: 'Overdue', count: overdueActions.length, activeBg: C.redStatus, fg: C.white },
-        { key: 'due-soon', label: 'Due soon', count: dueSoonActions.length, activeBg: C.amber, fg: C.white },
-        { key: 'open', label: 'Open', count: otherOpenActions.length, activeBg: 'rgba(255,255,255,0.3)', fg: C.white },
-        { key: 'closed', label: 'Closed', count: closedActions.length, activeBg: 'rgba(255,255,255,0.2)', fg: 'rgba(255,255,255,0.7)' },
+        { key: 'overdue', label: 'Overdue', count: overdueActions.length, accent: C.redStatus, tint: 'rgba(184,58,46,0.18)' },
+        { key: 'due-soon', label: 'Due soon', count: dueSoonActions.length, accent: C.amber, tint: 'rgba(196,125,17,0.20)' },
+        { key: 'open', label: 'Open', count: otherOpenActions.length, accent: C.cordBright, tint: 'rgba(93,191,176,0.18)' },
+        { key: 'closed', label: 'Closed', count: closedActions.length, accent: C.green, tint: 'rgba(45,122,95,0.18)' },
     ];
     return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.grip, padding: '12px 32px', borderBottom: '2px solid ' + C.cord } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.white, fontWeight: 700, letterSpacing: '0.01em' } }, "My Actions"), React.createElement("div", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 } }, profile.display_name, " \u00B7 ", openActions.length, " open", overdueActions.length > 0 ? ` · ${overdueActions.length} overdue` : '')), React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, filterPills.map(p => {
         const active = actionFilter === p.key;
-        return (React.createElement("button", { key: p.key, onClick: () => setActionFilter(active ? 'all' : p.key), style: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4px 12px', background: active ? '#FFC107' : 'rgba(255,255,255,0.12)', borderRadius: 3, gap: 1, minWidth: 52, border: 'none', cursor: 'pointer' } }, React.createElement("span", { style: { fontSize: 16, fontWeight: 700, color: active ? '#1C1C1C' : C.white, lineHeight: 1 } }, p.count), React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: active ? '#1C1C1C' : 'rgba(255,255,255,0.75)' } }, p.label)));
+        const hasCount = p.count > 0;
+        return (React.createElement("button", { key: p.key, onClick: () => setActionFilter(active ? 'all' : p.key), style: {
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                padding: '4px 12px', borderRadius: 4, gap: 1, minWidth: 54, cursor: 'pointer',
+                background: hasCount ? p.tint : 'rgba(255,255,255,0.06)',
+                border: active ? `2px solid ${p.accent}` : '2px solid transparent',
+                boxShadow: active ? `0 0 0 1px ${p.accent}` : 'none',
+                transition: 'border-color 0.12s, box-shadow 0.12s',
+            } }, React.createElement("span", { style: { fontSize: 16, fontWeight: 700, color: hasCount ? p.accent : 'rgba(232,234,232,0.4)', lineHeight: 1 } }, p.count), React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: hasCount ? 'rgba(232,234,232,0.85)' : 'rgba(232,234,232,0.4)' } }, p.label)));
     })))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto' } }, (() => {
         const show = actionFilter;
         if (show === 'overdue')
@@ -1870,13 +1878,13 @@ function MeetingsListView({ meetings, projects, users, isSenior, canSeePreCon, p
             background: C.white, border: `1px solid ${C.line}`,
             borderRadius: 3, boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
             zIndex: 50, minWidth: 220, overflow: 'hidden',
-        } }, React.createElement("div", { style: { padding: '8px 14px', background: C.red, fontSize: 9, color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' } }, "Select meeting type"), MEETING_TYPE_OPTIONS.map(opt => (React.createElement("button", { key: opt.value, onClick: () => handleCreate(opt.value), style: {
+        } }, React.createElement("div", { style: { padding: '8px 14px', background: C.grip, fontSize: 9, color: 'rgba(232,234,232,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' } }, "Select meeting type"), [...new Set(MEETING_TYPE_OPTIONS.map(o => o.category))].map(cat => React.createElement("div", { key: cat }, React.createElement("div", { style: { padding: '6px 14px', background: C.cordSoft, fontSize: 8.5, color: C.cord, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', borderBottom: `1px solid ${C.cordMid}` } }, cat), MEETING_TYPE_OPTIONS.filter(o => o.category === cat).map(opt => React.createElement("button", { key: opt.value, onClick: () => handleCreate(opt.value), style: {
             display: 'block', width: '100%', textAlign: 'left',
             padding: '11px 14px', background: 'transparent',
             border: 'none', borderBottom: `1px solid ${C.line}`,
             cursor: 'pointer', fontSize: 13, color: C.text,
             fontFamily: "'DM Sans', system-ui, sans-serif",
-        }, onMouseEnter: e => e.currentTarget.style.background = C.redSoft, onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, opt.label)))))))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto' } }, inProgressMeetings.length > 0 && (React.createElement("div", { style: { marginBottom: 20 } }, inProgressMeetings.map(m => {
+        }, onMouseEnter: e => e.currentTarget.style.background = C.cordSoft, onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, opt.label))))))))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto' } }, inProgressMeetings.length > 0 && (React.createElement("div", { style: { marginBottom: 20 } }, inProgressMeetings.map(m => {
         const cfg = MEETING_TYPES[m.meeting_type] || { label: m.meeting_type };
         return (React.createElement("div", { key: m.id, style: { display: 'grid', gridTemplateColumns: '200px 1fr', borderRadius: 4, overflow: 'hidden', border: `1px solid ${C.amber}`, marginBottom: 8 } }, React.createElement("div", { style: { background: C.amber, padding: '14px 18px' } }, React.createElement("div", { style: { fontSize: 8, color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 4, fontFamily: "'DM Sans', system-ui, sans-serif" } }, "In progress"), React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: C.white } }, cfg.label), React.createElement("div", { style: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 4 } }, formatMeetingDateLong(m.meeting_date))), React.createElement("div", { style: { background: C.white, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 } }, React.createElement("button", { onClick: () => { if (window.confirm(`Discard this draft ${cfg.label}? Nothing has been formally recorded yet — this cannot be undone.`))
                 onDelete(m.id); }, style: { padding: '9px 16px', background: 'transparent', color: C.muted, border: `1px solid ${C.line}`, borderRadius: 3, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }, onMouseEnter: e => { e.currentTarget.style.color = C.redStatus; e.currentTarget.style.borderColor = C.redStatus; }, onMouseLeave: e => { e.currentTarget.style.color = C.muted; e.currentTarget.style.borderColor = C.line; } }, "Discard"), React.createElement("button", { onClick: () => onOpen(m.id), style: { padding: '9px 18px', background: C.amber, color: '#fff', border: 'none', borderRadius: 3, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' } }, "Resume meeting \u2192"))));
@@ -2635,7 +2643,71 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, onClose })
         const params = new URLSearchParams({ subject, body });
         return `mailto:${encodeURIComponent(recipient.email || '')}?${params.toString().replace(/\+/g, '%20')}`;
     };
-    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto' } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 } }, React.createElement("div", null, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "Round-up emails"), React.createElement("div", { style: { fontSize: 13, color: C.muted, marginTop: 4 } }, grouped.length, " recipient", grouped.length === 1 ? '' : 's', " \u00B7 ", actions.length, " action", actions.length === 1 ? '' : 's', " from ", formatMeetingDateLong(meeting.meeting_date))), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), grouped.length === 0 ? (React.createElement("div", { style: { background: C.bg, padding: 24, borderRadius: 4, textAlign: 'center', color: C.muted, fontSize: 13 } }, "No actions assigned in this meeting. Add some actions before generating round-ups.")) : (React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 14, background: C.amberLight, padding: 10, borderRadius: 4, borderLeft: `3px solid ${C.amber}` } }, "Click \"Open email\" for each recipient. Your mail client opens with the message pre-filled \u2014 just click send. Recipients without a known email address show the name only; copy the message into a new email manually."), grouped.map((r, idx) => (React.createElement("div", { key: idx, style: { border: `1px solid ${C.line}`, borderRadius: 6, padding: 14, marginBottom: 10 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 14, fontWeight: 600, color: C.text } }, r.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, r.email || 'No email on file')), React.createElement("div", { style: { display: 'flex', gap: 6 } }, r.email && (React.createElement("a", { href: buildEmail(r), style: Object.assign(Object.assign({}, btnPrimary()), { textDecoration: 'none', display: 'inline-block' }) }, "Open email")), React.createElement("button", { onClick: () => {
+    const buildAllEmailsBody = () => {
+        const lines = [];
+        lines.push(`BixFrame Round-up — ${formatMeetingDateLong(meeting.meeting_date)}`);
+        lines.push('');
+        lines.push(`${actions.length} action${actions.length === 1 ? '' : 's'} across ${grouped.length} ${grouped.length === 1 ? 'person' : 'people'}.`);
+        lines.push('');
+        grouped.forEach(r => {
+            lines.push(`${r.name}${r.email ? ` <${r.email}>` : ''}`);
+            r.actions.forEach(a => {
+                lines.push(`  — ${a.description}`);
+                const project = a.project_id ? projects.find(p => p.id === a.project_id) : null;
+                if (project)
+                    lines.push(`     Project: ${project.name} (#${project.project_number})`);
+                if (a.due_date)
+                    lines.push(`     Due: ${formatMeetingDate(a.due_date)}`);
+                if (a.priority === 'high')
+                    lines.push(`     Priority: High`);
+                if (a.priority === 'urgent')
+                    lines.push(`     Priority: Urgent`);
+            });
+            lines.push('');
+        });
+        lines.push(chairName);
+        return lines.join('\n');
+    };
+    const emailAllRecipients = () => {
+        const emails = grouped.map(r => r.email).filter(Boolean);
+        if (emails.length === 0) {
+            alert('No recipients have an email address on file.');
+            return;
+        }
+        const subject = `BixFrame Round-up — ${formatMeetingDate(meeting.meeting_date)} — Meeting Actions`;
+        const params = new URLSearchParams({ subject, body: buildAllEmailsBody() });
+        window.location.href = `mailto:${encodeURIComponent(emails.join(','))}?${params.toString().replace(/\+/g, '%20')}`;
+    };
+    const exportMinutes = () => {
+        const w = window.open('', '_blank');
+        if (!w) {
+            alert('Pop-up blocked. Allow pop-ups for this site to export minutes.');
+            return;
+        }
+        const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const cfg = MEETING_TYPES[meeting.meeting_type] || { label: meeting.meeting_type };
+        const byProject = {};
+        actions.forEach(a => {
+            const pid = a.project_id || '_none';
+            if (!byProject[pid])
+                byProject[pid] = [];
+            byProject[pid].push(a);
+        });
+        let projectsHtml = '';
+        Object.keys(byProject).forEach(pid => {
+            const p = projects.find(pp => pp.id === pid);
+            const pname = p ? `${esc(p.name)} <span style="color:#6B7270;font-weight:400">#${esc(p.project_number)}</span>` : 'Unassigned';
+            let rows = byProject[pid].map(a => {
+                const owner = a.owner_user_id ? (users.find(u => u.id === a.owner_user_id) || {}).display_name : a.owner_name_fallback;
+                const st = a.status === 'closed' ? '<span style="color:#2D7A5F">\u2713 Closed</span>' : '<span style="color:#C47D11">Open</span>';
+                return `<tr><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD">${esc(a.description)}</td><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD;white-space:nowrap">${esc(owner || '\u2014')}</td><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD;white-space:nowrap">${a.due_date ? esc(formatMeetingDate(a.due_date)) : '\u2014'}</td><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD;white-space:nowrap">${st}</td></tr>`;
+            }).join('');
+            projectsHtml += `<h3 style="font-family:'DM Sans',sans-serif;font-size:15px;color:#1C1F1E;margin:24px 0 8px;border-bottom:2px solid #4A9B8E;padding-bottom:4px">${pname}</h3><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#6B7270;font-size:10px;text-transform:uppercase;letter-spacing:0.08em"><th style="padding:4px 10px">Action</th><th style="padding:4px 10px">Owner</th><th style="padding:4px 10px">Due</th><th style="padding:4px 10px">Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+        });
+        w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Minutes — ${esc(cfg.label)} — ${esc(formatMeetingDate(meeting.meeting_date))}</title><style>body{font-family:'DM Sans',system-ui,sans-serif;color:#2A2E2C;max-width:800px;margin:32px auto;padding:0 24px;line-height:1.5}h1{font-size:22px;color:#1C1F1E;margin-bottom:4px}.meta{color:#6B7270;font-size:13px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #E2E0DD}@media print{body{margin:0}}</style></head><body><h1>${esc(cfg.label)} — Minutes</h1><div class="meta">${esc(formatMeetingDateLong(meeting.meeting_date))} \u00B7 Chair: ${esc(chairName)} \u00B7 ${actions.length} action${actions.length === 1 ? '' : 's'}</div>${projectsHtml || '<p style="color:#6B7270">No actions recorded for this meeting.</p>'}<p style="margin-top:32px;color:#9BA3A0;font-size:11px">Generated by BixFrame \u00B7 ${esc(new Date().toLocaleDateString('en-GB'))}</p><script>window.onload=function(){window.print()}<\/script></body></html>`);
+        w.document.close();
+    };
+    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto' } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 } }, React.createElement("div", null, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "Round-up emails"), React.createElement("div", { style: { fontSize: 13, color: C.muted, marginTop: 4 } }, grouped.length, " recipient", grouped.length === 1 ? '' : 's', " \u00B7 ", actions.length, " action", actions.length === 1 ? '' : 's', " from ", formatMeetingDateLong(meeting.meeting_date))), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), grouped.length > 0 && (React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } }, React.createElement("button", { onClick: emailAllRecipients, style: btnPrimary() }, "Email all attendees"), React.createElement("button", { onClick: () => { navigator.clipboard.writeText(buildAllEmailsBody()); alert('All actions copied to clipboard.'); }, style: btnSecondary() }, "Copy all"), React.createElement("button", { onClick: exportMinutes, style: btnSecondary() }, "Export minutes"))), grouped.length === 0 ? (React.createElement("div", { style: { background: C.bg, padding: 24, borderRadius: 4, textAlign: 'center', color: C.muted, fontSize: 13 } }, "No actions assigned in this meeting. Add some actions before generating round-ups.")) : (React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 14, background: C.amberLight, padding: 10, borderRadius: 4, borderLeft: `3px solid ${C.amber}` } }, "Click \"Open email\" for each recipient. Your mail client opens with the message pre-filled \u2014 just click send. Recipients without a known email address show the name only; copy the message into a new email manually."), grouped.map((r, idx) => (React.createElement("div", { key: idx, style: { border: `1px solid ${C.line}`, borderRadius: 6, padding: 14, marginBottom: 10 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 14, fontWeight: 600, color: C.text } }, r.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, r.email || 'No email on file')), React.createElement("div", { style: { display: 'flex', gap: 6 } }, r.email && (React.createElement("a", { href: buildEmail(r), style: Object.assign(Object.assign({}, btnPrimary()), { textDecoration: 'none', display: 'inline-block' }) }, "Open email")), React.createElement("button", { onClick: () => {
             const subject = `BixFrame Round-up — ${formatMeetingDate(meeting.meeting_date)} — Your Actions`;
             const lines = [];
             lines.push(`Subject: ${subject}`);
