@@ -1955,6 +1955,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     const [activeProjectId, setActiveProjectId] = useState(null);
     const [saveStatus, setSaveStatus] = useState({}); // { entryKey: 'pending' | 'saving' | 'saved' | 'error' }
     const [showAddAction, setShowAddAction] = useState(false);
+    const [convertingHandoff, setConvertingHandoff] = useState(null);
     const [showRoundUp, setShowRoundUp] = useState(false);
     const [attendees, setAttendees] = useState([]); // [{id?, user_id, name_fallback, present}]
     const [showAttendance, setShowAttendance] = useState(false);
@@ -2158,35 +2159,16 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             alert('Failed to acknowledge: ' + e.message);
         }
     };
-    const convertHandoffToAction = async (handoff) => {
+    const convertHandoffToAction = (handoff) => {
         if (!isChair) {
             alert('Only the chair of this meeting can convert a handoff to an action.');
             return;
         }
-        try {
-            const { data: act, error: actErr } = await sb.from('actions').insert({
-                project_id: handoff.project_id,
-                meeting_id: meetingId,
-                description: handoff.note,
-                status: 'open',
-                created_by: currentUser ? currentUser.id : null,
-            }).select().single();
-            if (actErr)
-                throw actErr;
-            setActions(prev => [...prev, act]);
-            // Acknowledge the handoff as part of converting it
-            const { data: h, error: hErr } = await sb.from('meeting_handoffs').update({
-                status: 'acknowledged',
-                acknowledged_by: currentUser ? currentUser.id : null,
-                acknowledged_at: new Date().toISOString(),
-            }).eq('id', handoff.id).select().single();
-            if (hErr)
-                throw hErr;
-            setHandoffs(prev => prev.map(x => x.id === handoff.id ? h : x));
-        }
-        catch (e) {
-            alert('Failed to convert to action: ' + e.message);
-        }
+        // Open the full add-action dialogue, pre-filled with the flag text.
+        // The handoff is only marked acknowledged once the action is actually
+        // created with proper accountability (owner required by the dialogue).
+        setConvertingHandoff(handoff);
+        setShowAddAction(true);
     };
     // Save entry field with debounce
     const saveTimers = useRef({});
@@ -2259,6 +2241,25 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             if (error)
                 throw error;
             setActions(prev => [...prev, data]);
+            // If this action was created by converting a handoff, link them
+            // and mark the handoff acknowledged now that real accountability
+            // (owner, optional deadline) exists.
+            if (convertingHandoff) {
+                try {
+                    const { data: h, error: hErr } = await sb.from('meeting_handoffs').update({
+                        status: 'acknowledged',
+                        acknowledged_by: currentUser ? currentUser.id : null,
+                        acknowledged_at: new Date().toISOString(),
+                        resulting_action_id: data.id,
+                    }).eq('id', convertingHandoff.id).select().single();
+                    if (!hErr && h)
+                        setHandoffs(prev => prev.map(x => x.id === h.id ? h : x));
+                }
+                catch (he) {
+                    console.error('Failed to link handoff to action', he);
+                }
+                setConvertingHandoff(null);
+            }
             setShowAddAction(false);
         }
         catch (e) {
@@ -2371,7 +2372,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     const activeProject = activeProjectId ? meetingProjects.find(p => p.id === activeProjectId) : null;
     const activeEntry = activeProject ? entries[activeProject.id] : null;
     const projectActions = activeProject ? actions.filter(a => a.project_id === activeProject.id) : [];
-    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.grip, padding: '12px 32px', borderBottom: '2px solid ' + C.cord } }, React.createElement("div", { style: { maxWidth: 1400, margin: '0 auto' } }, React.createElement("button", { onClick: onBack, style: { background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: 11, cursor: 'pointer', padding: 0, marginBottom: 6, fontFamily: "'DM Sans', system-ui, sans-serif", letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 } }, "\u2190 All meetings"), React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.white, fontWeight: 700, letterSpacing: '0.01em' } }, meetingCfg.label), React.createElement("div", { style: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 3 } }, formatMeetingDateLong(meeting.meeting_date), meeting.started_at && ` · ${new Date(meeting.started_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`, " \u00B7 ", isReadOnly ? 'Closed' : 'In progress — saves automatically')), React.createElement("button", { onClick: () => { setShowAttendance(true); seedAttendanceIfEmpty(); }, style: { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4, padding: '7px 14px', color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex', alignItems: 'center', gap: 7 } }, React.createElement("span", { style: { fontSize: 13 } }, "\uD83D\uDC65"), (() => {
+    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.grip, padding: '12px 32px', borderBottom: '2px solid ' + C.cord } }, React.createElement("div", { style: { maxWidth: 1400, margin: '0 auto' } }, React.createElement("button", { onClick: onBack, style: { background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: 11, cursor: 'pointer', padding: 0, marginBottom: 6, fontFamily: "'DM Sans', system-ui, sans-serif", letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 } }, "\u2190 All meetings"), React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.white, fontWeight: 700, letterSpacing: '0.01em' } }, meetingCfg.label), React.createElement("div", { style: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 3 } }, formatMeetingDateLong(meeting.meeting_date), meeting.started_at && ` · ${new Date(meeting.started_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`, " \u00B7 ", isReadOnly ? 'Closed' : 'In progress — saves automatically')), React.createElement("button", { onClick: () => { setShowAttendance(true); seedAttendanceIfEmpty(); }, style: { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4, padding: '7px 14px', color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex', alignItems: 'center', gap: 7 } }, React.createElement("svg", { width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 9, cy: 8, r: 3.2, stroke: C.cordBright, strokeWidth: 2 }), React.createElement("path", { d: "M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5", stroke: C.cordBright, strokeWidth: 2, strokeLinecap: "round" }), React.createElement("circle", { cx: 17, cy: 8.5, r: 2.6, stroke: C.cordBright, strokeWidth: 2, opacity: 0.6 }), React.createElement("path", { d: "M16 14.2c2.6.2 4.5 2.1 4.5 4.8", stroke: C.cordBright, strokeWidth: 2, strokeLinecap: "round", opacity: 0.6 })), (() => {
         const present = attendees.filter(a => a.present).length;
         return attendees.length > 0 ? `Attendance · ${present}/${attendees.length}` : 'Attendance';
     })())))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 1400, margin: '0 auto' } }, React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '280px 1fr', gap: 20 } }, React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden', alignSelf: 'flex-start', position: 'sticky', top: 80 } }, React.createElement("div", { style: { background: C.red, padding: '9px 14px', borderBottom: `1px solid ${C.redDark}`, fontSize: 10, color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, React.createElement("span", { style: { color: C.white } }, "Projects"), " (", meetingProjects.length, ")"), React.createElement("div", { style: { maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' } }, meetingGroupKeys.map(groupKey => (React.createElement("div", { key: groupKey }, React.createElement("div", { style: { padding: '6px 14px', background: C.redSoft, borderBottom: `1px solid ${C.redMid}`, fontSize: 10, color: C.red, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', justifyContent: 'space-between' } }, React.createElement("span", null, groupKey === '—' ? `Unassigned ${meetingCfg.groupLabel}` : groupKey), React.createElement("span", { style: { color: C.muted } }, meetingProjectGroups[groupKey].length)), meetingProjectGroups[groupKey].map(p => {
@@ -2390,7 +2391,28 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             borderRadius: 3, cursor: 'pointer', fontSize: 12,
             fontWeight: 600, fontFamily: "'DM Sans', system-ui, sans-serif",
             letterSpacing: '0.03em',
-        } }, "Delete meeting"))), React.createElement("div", { style: { display: 'flex', gap: 8 } }, !isReadOnly && (React.createElement(React.Fragment, null, React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "Generate round-up (", actions.length, ")"), React.createElement("button", { onClick: closeMeeting, style: btnPrimary() }, "End meeting"))), isReadOnly && (React.createElement(React.Fragment, null, isSenior && React.createElement("button", { onClick: reopenMeeting, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: C.amber, color: C.amber }) }, "Reopen meeting"), React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "View round-up (", actions.length, ")"))))), actions.length > 0 && (React.createElement("div", { style: { marginTop: 16, background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { background: C.prussian, padding: '10px 16px', borderBottom: `1px solid ${C.prussianDark}`, fontSize: 10, color: C.prussianMid, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "All actions in this meeting (", actions.length, ")"), React.createElement("div", null, actions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: projects, isReadOnly: isReadOnly, onUpdate: updateAction, onDelete: deleteAction })))))), showAddAction && activeProject && (React.createElement(AddActionModal, { project: activeProject, users: users, onClose: () => setShowAddAction(false), onAdd: addAction })), showAttendance && (React.createElement(AttendancePanel, { attendees: attendees, users: users, projectTeamUserIds: projectTeamUserIds, isChair: isChair, isReadOnly: isReadOnly, onToggle: toggleAttendeePresent, onAdd: addAttendee, onRemove: removeAttendee, onClose: () => setShowAttendance(false) })), showRoundUp && (React.createElement(RoundUpModal, { meeting: meeting, actions: actions, users: users, projects: projects, chairName: profile.display_name, attendees: attendees, onClose: () => setShowRoundUp(false) }))))));
+        } }, "Delete meeting"))), React.createElement("div", { style: { display: 'flex', gap: 8 } }, !isReadOnly && (React.createElement(React.Fragment, null, React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "Generate round-up (", actions.length, ")"), React.createElement("button", { onClick: closeMeeting, style: btnPrimary() }, "End meeting"))), isReadOnly && (React.createElement(React.Fragment, null, isSenior && React.createElement("button", { onClick: reopenMeeting, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: C.amber, color: C.amber }) }, "Reopen meeting"), React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "View round-up (", actions.length, ")"))))), actions.length > 0 && (React.createElement("div", { style: { marginTop: 16, background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { background: C.prussian, padding: '10px 16px', borderBottom: `1px solid ${C.prussianDark}`, fontSize: 10, color: C.prussianMid, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "All actions in this meeting (", actions.length, ")"), React.createElement("div", null, actions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: projects, isReadOnly: isReadOnly, onUpdate: updateAction, onDelete: deleteAction })))))), (() => {
+        const raised = (handoffs || []).filter(h => h.from_meeting_id === meetingId);
+        if (raised.length === 0)
+            return null;
+        return React.createElement("div", { style: { marginTop: 16, background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { background: C.grip, borderBottom: `2px solid ${C.cord}`, padding: '10px 16px', fontSize: 10, color: 'rgba(232,234,232,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Flags raised in this meeting (", raised.length, ")"), React.createElement("div", { style: { padding: '4px 0' } }, raised.map(h => {
+            const proj = projects.find(p => p.id === h.project_id);
+            const toCfg = MEETING_TYPES[h.to_department] || { short: h.to_department };
+            const isAck = h.status === 'acknowledged';
+            const resultAction = h.resulting_action_id ? actions.find(a => a.id === h.resulting_action_id) : null;
+            let resultOwner = null;
+            if (resultAction) {
+                if (resultAction.owner_user_id) {
+                    const ru = users.find(u => u.id === resultAction.owner_user_id);
+                    resultOwner = ru ? ru.display_name : null;
+                }
+                else if (resultAction.owner_name_fallback) {
+                    resultOwner = resultAction.owner_name_fallback;
+                }
+            }
+            return React.createElement("div", { key: h.id, style: { padding: '10px 16px', borderBottom: `1px solid ${C.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 } }, React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 12, color: C.text, lineHeight: 1.4 } }, proj && React.createElement("span", { style: { fontWeight: 600 } }, `${proj.name} `), React.createElement("span", { style: { color: C.mist, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' } }, `\u2192 ${toCfg.short || h.to_department}`)), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginTop: 3 } }, h.note), isAck && h.resulting_action_id && React.createElement("div", { style: { fontSize: 10, color: C.muted, marginTop: 3, fontStyle: 'italic' } }, "Became an action", resultOwner ? ` \u00B7 ${resultOwner}` : '', (resultAction && resultAction.due_date) ? ` \u00B7 due ${formatMeetingDate(resultAction.due_date)}` : '')), React.createElement("span", { style: { fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', color: isAck ? C.green : C.amber } }, isAck ? (h.resulting_action_id ? "\u2713 Converted" : "\u2713 Acknowledged") : "Pending"));
+        })));
+    })(), showAddAction && activeProject && (React.createElement(AddActionModal, { project: activeProject, users: users, prefillDescription: convertingHandoff ? convertingHandoff.note : '', isConversion: !!convertingHandoff, onClose: () => { setShowAddAction(false); setConvertingHandoff(null); }, onAdd: addAction })), showAttendance && (React.createElement(AttendancePanel, { attendees: attendees, users: users, projectTeamUserIds: projectTeamUserIds, isChair: isChair, isReadOnly: isReadOnly, onToggle: toggleAttendeePresent, onAdd: addAttendee, onRemove: removeAttendee, onClose: () => setShowAttendance(false) })), showRoundUp && (React.createElement(RoundUpModal, { meeting: meeting, actions: actions, users: users, projects: projects, chairName: profile.display_name, attendees: attendees, onClose: () => setShowRoundUp(false) }))))));
 }
 // ============================================================
 // KEY DATES SECTION — in meeting capture pane
@@ -2613,10 +2635,29 @@ function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly,
     }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 24, paddingTop: 20, borderTop: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.prussian, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Actions for ", project.name, " (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: btnSecondary() }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.muted, padding: 12, background: C.bg, borderRadius: 4, textAlign: 'center' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", null, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true }))))), !isReadOnly && (React.createElement("div", { style: { marginTop: 16, paddingTop: 14, borderTop: `1px dashed ${C.line}` } }, !showHandoffForm ? (React.createElement("button", { onClick: () => { setShowHandoffForm(true); setHandoffDept(''); setHandoffNote(''); }, style: { background: 'transparent', border: `1px solid ${C.cordMid}`, color: C.cord, borderRadius: 4, padding: '7px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", null, "\u2691"), "Flag for another team")) : (React.createElement("div", { style: { background: C.cordSoft, border: `1px solid ${C.cordMid}`, borderRadius: 4, padding: 14 } }, React.createElement("div", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.cord, marginBottom: 10 } }, "Flag something for another team"), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 8 } }, "This surfaces as a callout when that team's meeting next opens this project. Their chair can acknowledge it or convert it to an action."), React.createElement("div", { style: { marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4, fontWeight: 600 } }, "Which team?"), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, MEETING_TYPE_OPTIONS.filter(o => o.value !== meetingType).map(o => (React.createElement("button", { key: o.value, onClick: () => setHandoffDept(o.value), style: { padding: '5px 10px', fontSize: 11, fontWeight: 600, borderRadius: 3, cursor: 'pointer', border: `1px solid ${handoffDept === o.value ? C.cord : C.line}`, background: handoffDept === o.value ? C.cord : C.white, color: handoffDept === o.value ? '#fff' : C.text, fontFamily: "'DM Sans', system-ui, sans-serif" } }, o.label.replace(' Meeting', '')))))), React.createElement("textarea", { value: handoffNote, onChange: e => setHandoffNote(e.target.value), placeholder: "What does that team need to know or do?", rows: 3, style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', resize: 'vertical', marginBottom: 8 }) }), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("button", { onClick: () => { if (handoffDept && handoffNote.trim()) {
             onCreateHandoff(project.id, handoffDept, handoffNote);
             setShowHandoffForm(false);
-        } }, disabled: !handoffDept || !handoffNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { fontSize: 11, opacity: (!handoffDept || !handoffNote.trim()) ? 0.4 : 1 }) }, "Send flag"), React.createElement("button", { onClick: () => setShowHandoffForm(false), style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (handoffs || []).filter(h => h.from_meeting_type === meetingType && h.to_department !== meetingType).length > 0 && (React.createElement("div", { style: { marginTop: 12 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.mist, marginBottom: 6 } }, "Flagged from here"), (handoffs || []).filter(h => h.from_meeting_type === meetingType && h.to_department !== meetingType).map(h => {
-        const toCfg = MEETING_TYPES[h.to_department] || { short: h.to_department };
-        return React.createElement("div", { key: h.id, style: { fontSize: 11, color: C.muted, padding: '5px 0', borderBottom: `1px solid ${C.line}` } }, React.createElement("span", { style: { fontWeight: 600, color: C.text } }, `\u2192 ${toCfg.short || h.to_department}: `), h.note, React.createElement("span", { style: { color: h.status === 'acknowledged' ? C.green : C.amber, marginLeft: 6, fontWeight: 600 } }, h.status === 'acknowledged' ? '\u2713 acknowledged' : 'pending'));
-    }))))))));
+        } }, disabled: !handoffDept || !handoffNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { fontSize: 11, opacity: (!handoffDept || !handoffNote.trim()) ? 0.4 : 1 }) }, "Send flag"), React.createElement("button", { onClick: () => setShowHandoffForm(false), style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (() => {
+        const outgoing = (handoffs || []).filter(h => h.from_meeting_type === meetingType && h.to_department !== meetingType);
+        if (outgoing.length === 0)
+            return null;
+        return React.createElement("div", { style: { marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.line}` } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.prussian, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 } }, "Flagged for other teams (", outgoing.length, ")"), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, outgoing.map(h => {
+            const toCfg = MEETING_TYPES[h.to_department] || { short: h.to_department };
+            const isAck = h.status === 'acknowledged';
+            const resultAction = h.resulting_action_id ? (projectActions || []).find(a => a.id === h.resulting_action_id) : null;
+            let resultOwner = null;
+            if (resultAction) {
+                if (resultAction.owner_user_id) {
+                    const ru = users.find(u => u.id === resultAction.owner_user_id);
+                    resultOwner = ru ? ru.display_name : null;
+                }
+                else if (resultAction.owner_name_fallback) {
+                    resultOwner = resultAction.owner_name_fallback;
+                }
+            }
+            return React.createElement("div", { key: h.id, style: { padding: '8px 12px', borderRadius: 4, background: isAck ? C.bg : C.amberLight, border: `1px solid ${isAck ? C.line : '#EAD08A'}`, borderLeft: `3px solid ${isAck ? C.green : C.amber}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 } }, React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.mist, marginBottom: 2 } }, `\u2192 ${toCfg.short || h.to_department} team`), React.createElement("div", { style: { fontSize: 12, color: C.text, lineHeight: 1.4 } }, h.note)), React.createElement("div", { style: { textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0 } }, isAck
+                ? React.createElement("span", { style: { fontSize: 10, fontWeight: 700, color: C.green } }, h.resulting_action_id ? "\u2713 Converted" : "\u2713 Acknowledged")
+                : React.createElement("span", { style: { fontSize: 10, fontWeight: 700, color: C.amber } }, "Pending"))), isAck && h.resulting_action_id && (React.createElement("div", { style: { fontSize: 10, color: C.muted, marginTop: 4, fontStyle: 'italic' } }, "Became an action", resultOwner ? ` \u00B7 ${resultOwner}` : '', (resultAction && resultAction.due_date) ? ` \u00B7 due ${formatMeetingDate(resultAction.due_date)}` : '')));
+        })));
+    })())))));
 }
 function NoteField({ label, value, onChange, disabled, placeholder, rows }) {
     const [local, setLocal] = useState(value || '');
@@ -2723,8 +2764,8 @@ function ActionRow({ action, users, projects, isReadOnly, onUpdate, onDelete, co
 // ============================================================
 // ADD ACTION MODAL
 // ============================================================
-function AddActionModal({ project, users, onClose, onAdd }) {
-    const [description, setDescription] = useState('');
+function AddActionModal({ project, users, onClose, onAdd, prefillDescription, isConversion }) {
+    const [description, setDescription] = useState(prefillDescription || '');
     const [ownerMode, setOwnerMode] = useState('user'); // 'user' | 'other'
     const [ownerUserId, setOwnerUserId] = useState('');
     const [ownerNameFallback, setOwnerNameFallback] = useState('');
@@ -2754,7 +2795,7 @@ function AddActionModal({ project, users, onClose, onAdd }) {
             setBusy(false);
         }
     };
-    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.25)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 440, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, "Add action"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 18 } }, "For project: ", React.createElement("strong", { style: { color: C.text } }, project.name)), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Description *" }, React.createElement("textarea", { value: description, onChange: (e) => setDescription(e.target.value), autoFocus: true, required: true, rows: 2, style: Object.assign(Object.assign({}, inputStyle()), { resize: 'vertical' }), placeholder: "What needs to happen?" })), React.createElement(Field, { label: "Owner *" }, React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 8 } }, React.createElement("button", { type: "button", onClick: () => setOwnerMode('user'), style: {
+    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.25)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 440, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, isConversion ? "Convert flag to action" : "Add action"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 18 } }, isConversion ? "Converting a flag — assign an owner so it has clear accountability. For project: " : "For project: ", React.createElement("strong", { style: { color: C.text } }, project.name)), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Description *" }, React.createElement("textarea", { value: description, onChange: (e) => setDescription(e.target.value), autoFocus: true, required: true, rows: 2, style: Object.assign(Object.assign({}, inputStyle()), { resize: 'vertical' }), placeholder: "What needs to happen?" })), React.createElement(Field, { label: "Owner *" }, React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 8 } }, React.createElement("button", { type: "button", onClick: () => setOwnerMode('user'), style: {
             flex: 1, padding: '7px 10px', fontSize: 12, fontWeight: 500,
             background: ownerMode === 'user' ? C.red : C.white,
             color: ownerMode === 'user' ? C.white : C.text,
