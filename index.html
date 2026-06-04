@@ -1580,14 +1580,18 @@ function ActionCloseList({ actions, users, today, onActionToggle }) {
 function ActionIndicatorBadge({ actions, users, columnLabel, onActionToggle, onNavigate }) {
     const [open, setOpen] = useState(false);
     const [popPos, setPopPos] = useState({ x: 0, y: 0 });
-    const btnRef = useRef(null);
+    const btnOpenRef = useRef(null);
+    const btnOverdueRef = useRef(null);
     const popRef = useRef(null);
     const today = new Date().toISOString().slice(0, 10);
     useEffect(() => {
         if (!open)
             return;
         const handler = (e) => {
-            if (popRef.current && !popRef.current.contains(e.target) && btnRef.current && !btnRef.current.contains(e.target))
+            const inPop = popRef.current && popRef.current.contains(e.target);
+            const inOpenBtn = btnOpenRef.current && btnOpenRef.current.contains(e.target);
+            const inOverdueBtn = btnOverdueRef.current && btnOverdueRef.current.contains(e.target);
+            if (!inPop && !inOpenBtn && !inOverdueBtn)
                 setOpen(false);
         };
         document.addEventListener('mousedown', handler);
@@ -1595,10 +1599,13 @@ function ActionIndicatorBadge({ actions, users, columnLabel, onActionToggle, onN
     }, [open]);
     if (!actions || actions.length === 0)
         return null;
-    const overdueCount = actions.filter(a => a.due_date && a.due_date < today).length;
-    const bg = overdueCount > 0 ? C.redStatus : C.amber;
-    const label = overdueCount > 0 ? `${overdueCount} overdue` : `${actions.length} open`;
-    const handleOpen = (e) => {
+    const overdueActions = actions.filter(a => a.due_date && a.due_date < today);
+    const openNotOverdueActions = actions.filter(a => !(a.due_date && a.due_date < today));
+    const overdueCount = overdueActions.length;
+    const openCount = openNotOverdueActions.length;
+    // The popover shows everything still open (overdue first, then upcoming/no-date).
+    const popoverActions = [...overdueActions, ...openNotOverdueActions];
+    const togglePopover = (btnRef) => (e) => {
         e.stopPropagation();
         if (!open && btnRef.current) {
             const rect = btnRef.current.getBoundingClientRect();
@@ -1606,14 +1613,24 @@ function ActionIndicatorBadge({ actions, users, columnLabel, onActionToggle, onN
         }
         setOpen(v => !v);
     };
-    return (React.createElement("span", { style: { position: 'relative', display: 'inline-block' } }, React.createElement("button", { ref: btnRef, onClick: handleOpen, style: {
+    const renderBadge = (ref, count, isOverdue) => React.createElement("button", {
+        ref,
+        onClick: togglePopover(ref),
+        style: {
             display: 'inline-flex', alignItems: 'center', gap: 3,
             padding: '1px 6px', borderRadius: 10, border: 'none',
-            background: bg, color: C.white, fontSize: 9, fontWeight: 700,
+            background: isOverdue ? C.redStatus : C.amber,
+            color: C.white, fontSize: 9, fontWeight: 700,
             cursor: 'pointer', marginLeft: 4,
             fontFamily: "'DM Sans', system-ui, sans-serif",
             letterSpacing: '0.04em',
-        }, title: `${label} — click to view` }, overdueCount > 0 ? '⚠ ' : '● ', label), open && (React.createElement("div", { ref: popRef, style: {
+        },
+        title: `${count} ${isOverdue ? 'overdue' : 'open'} — click to view`
+    }, isOverdue ? '⚠ ' : '● ', `${count} ${isOverdue ? 'overdue' : 'open'}`);
+    return (React.createElement("span", { style: { position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 2 } },
+        openCount > 0 && renderBadge(btnOpenRef, openCount, false),
+        overdueCount > 0 && renderBadge(btnOverdueRef, overdueCount, true),
+        open && (React.createElement("div", { ref: popRef, style: {
             position: 'fixed',
             left: popPos.x,
             top: Math.max(8, popPos.y - 8),
@@ -1622,7 +1639,7 @@ function ActionIndicatorBadge({ actions, users, columnLabel, onActionToggle, onN
             background: C.white, border: `1px solid ${C.line}`,
             borderRadius: 4, boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
             minWidth: 280, maxWidth: 340,
-        } }, React.createElement("div", { style: { padding: '8px 12px', background: C.prussian, borderRadius: '4px 4px 0 0' } }, React.createElement("div", { style: { fontSize: 10, color: C.white, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' } }, columnLabel, " \u2014 Open actions")), React.createElement(ActionNavList, { actions: actions, users: users, today: today, onNavigate: onNavigate })))));
+        } }, React.createElement("div", { style: { padding: '8px 12px', background: C.prussian, borderRadius: '4px 4px 0 0' } }, React.createElement("div", { style: { fontSize: 10, color: C.white, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' } }, columnLabel, " \u2014 Open actions")), React.createElement(ActionNavList, { actions: popoverActions, users: users, today: today, onNavigate: onNavigate })))));
 }
 // ============================================================
 // CELLS
@@ -1816,23 +1833,39 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
         }
     };
     const today = new Date().toISOString().slice(0, 10);
-    const openActions = actions.filter(a => a.status === 'open');
-    const overdueActions = openActions.filter(a => a.due_date && a.due_date < today);
-    const dueSoonActions = openActions.filter(a => {
-        if (!a.due_date || a.due_date < today)
-            return false;
-        const diff = (new Date(a.due_date) - new Date()) / (1000 * 60 * 60 * 24);
-        return diff <= 7;
-    });
-    const otherOpenActions = openActions.filter(a => {
-        if (!a.due_date)
-            return true;
-        if (a.due_date < today)
-            return false;
-        const diff = (new Date(a.due_date) - new Date()) / (1000 * 60 * 60 * 24);
-        return diff > 7;
-    });
-    const closedActions = actions.filter(a => a.status === 'closed');
+    // Split into two top-level sections by relation: actions you own (full
+    // close authority) vs. actions you collaborate on (the owner closes).
+    const ownedAll = actions.filter(a => a._relation !== 'collaborator');
+    const collabAll = actions.filter(a => a._relation === 'collaborator');
+    // Bucket helper — same status-tiering applied to each relation set.
+    const bucket = (list) => {
+        const open = list.filter(a => a.status === 'open');
+        const overdue = open.filter(a => a.due_date && a.due_date < today);
+        const dueSoon = open.filter(a => {
+            if (!a.due_date || a.due_date < today)
+                return false;
+            const diff = (new Date(a.due_date) - new Date()) / (1000 * 60 * 60 * 24);
+            return diff <= 7;
+        });
+        const other = open.filter(a => {
+            if (!a.due_date)
+                return true;
+            if (a.due_date < today)
+                return false;
+            const diff = (new Date(a.due_date) - new Date()) / (1000 * 60 * 60 * 24);
+            return diff > 7;
+        });
+        const closed = list.filter(a => a.status === 'closed');
+        return { open, overdue, dueSoon, other, closed };
+    };
+    const owned = bucket(ownedAll);
+    const collab = bucket(collabAll);
+    // Header summary metrics combine both relation sets.
+    const openActions = [...owned.open, ...collab.open];
+    const overdueActions = [...owned.overdue, ...collab.overdue];
+    const dueSoonActions = [...owned.dueSoon, ...collab.dueSoon];
+    const otherOpenActions = [...owned.other, ...collab.other];
+    const closedActions = [...owned.closed, ...collab.closed];
     if (loading)
         return React.createElement(SplashScreen, { message: "Loading your actions\u2026" });
     if (error)
@@ -1844,7 +1877,30 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
         { key: 'open', label: 'Open', count: otherOpenActions.length, accent: C.cordBright, tint: 'rgba(93,191,176,0.18)' },
         { key: 'closed', label: 'Closed', count: closedActions.length, accent: C.green, tint: 'rgba(45,122,95,0.18)' },
     ];
-    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.grip, padding: '12px 32px', borderBottom: '2px solid ' + C.cord } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.white, fontWeight: 700, letterSpacing: '0.01em' } }, "My Actions"), React.createElement("div", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 } }, profile.display_name, " \u00B7 ", openActions.length, " open", overdueActions.length > 0 ? ` · ${overdueActions.length} overdue` : '')), React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, filterPills.map(p => {
+    // Relation-group renderer: returns the ActionSections for one side
+    // (owned or collaborator) with an optional eyebrow heading.
+    const renderRelationGroup = (kind, b) => {
+        if (b.open.length === 0 && b.closed.length === 0)
+            return null;
+        const isCollab = kind === 'collab';
+        const heading = isCollab ? 'Collaborating' : 'Your actions';
+        const headingHint = isCollab
+            ? "Actions you're working on with someone else. Only the owner (named on each card) can close these."
+            : 'Actions where you have closing authority.';
+        const headingColour = isCollab ? C.cord : C.red;
+        // Within the all-view, render the same status subgroupings.
+        const tertiary = React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 14 } },
+            b.overdue.length > 0 && (React.createElement(ActionSection, { title: "Overdue", accentColour: C.redStatus, actions: b.overdue, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
+            b.dueSoon.length > 0 && (React.createElement(ActionSection, { title: "Due this week", accentColour: C.amber, actions: b.dueSoon, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
+            b.other.length > 0 && (React.createElement(ActionSection, { title: b.overdue.length === 0 && b.dueSoon.length === 0 ? 'Open actions' : 'Upcoming', accentColour: headingColour, actions: b.other, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, showOwnerNameAs: isCollab ? 'collaborator' : undefined })));
+        return React.createElement("div", { key: kind, style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+            React.createElement("div", { style: { borderTop: `2px solid ${headingColour}`, paddingTop: 10 } },
+                React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' } },
+                    React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 700, color: headingColour, textTransform: 'uppercase', letterSpacing: '0.1em' } }, heading),
+                    React.createElement("span", { style: { fontSize: 11, color: C.muted, fontStyle: 'italic' } }, headingHint))),
+            tertiary);
+    };
+    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.grip, padding: '12px 32px', borderBottom: '2px solid ' + C.cord } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.white, fontWeight: 700, letterSpacing: '0.01em' } }, "My Actions"), React.createElement("div", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 } }, profile.display_name, " \u00B7 ", owned.open.length, " open", owned.overdue.length > 0 ? ` · ${owned.overdue.length} overdue` : '', collab.open.length > 0 ? ` · ${collab.open.length} collaborating` : '')), React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, filterPills.map(p => {
         const active = actionFilter === p.key;
         const hasCount = p.count > 0;
         return (React.createElement("button", { key: p.key, onClick: () => setActionFilter(active ? 'all' : p.key), style: {
@@ -1857,27 +1913,43 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
             } }, React.createElement("span", { style: { fontSize: 16, fontWeight: 700, color: hasCount ? p.accent : 'rgba(232,234,232,0.4)', lineHeight: 1 } }, p.count), React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: hasCount ? 'rgba(232,234,232,0.85)' : 'rgba(232,234,232,0.4)' } }, p.label)));
     })))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto' } }, (() => {
         const show = actionFilter;
+        // Within a filter view, render owned section and collab section
+        // (skipping each if empty) so the visual structure mirrors the
+        // 'all' view.
+        const renderFiltered = (bucketKey, title, accent, dimmed) => {
+            const ownedSet = owned[bucketKey];
+            const collabSet = collab[bucketKey];
+            if (ownedSet.length === 0 && collabSet.length === 0)
+                return React.createElement("div", { style: { padding: '32px', textAlign: 'center', color: C.muted } }, `No ${title.toLowerCase()} actions.`);
+            return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 20 } },
+                ownedSet.length > 0 && React.createElement(ActionSection, { title: `${title} \u00B7 your actions (${ownedSet.length})`, accentColour: accent, actions: ownedSet, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, dimmed: dimmed }),
+                collabSet.length > 0 && React.createElement(ActionSection, { title: `${title} \u00B7 collaborating (${collabSet.length})`, accentColour: C.cord, actions: collabSet, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, dimmed: dimmed, showOwnerNameAs: 'collaborator' }));
+        };
         if (show === 'overdue')
-            return overdueActions.length > 0 ? (React.createElement(ActionSection, { title: `Overdue (${overdueActions.length})`, accentColour: C.redStatus, actions: overdueActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users })) : React.createElement("div", { style: { padding: '32px', textAlign: 'center', color: C.muted } }, "No overdue actions.");
+            return renderFiltered('overdue', 'Overdue', C.redStatus, false);
         if (show === 'due-soon')
-            return dueSoonActions.length > 0 ? (React.createElement(ActionSection, { title: `Due this week (${dueSoonActions.length})`, accentColour: C.amber, actions: dueSoonActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users })) : React.createElement("div", { style: { padding: '32px', textAlign: 'center', color: C.muted } }, "Nothing due this week.");
+            return renderFiltered('dueSoon', 'Due this week', C.amber, false);
         if (show === 'open')
-            return otherOpenActions.length > 0 ? (React.createElement(ActionSection, { title: `Open (${otherOpenActions.length})`, accentColour: C.red, actions: otherOpenActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users })) : React.createElement("div", { style: { padding: '32px', textAlign: 'center', color: C.muted } }, "No upcoming open actions.");
+            return renderFiltered('other', 'Open', C.red, false);
         if (show === 'closed')
-            return closedActions.length > 0 ? (React.createElement(ActionSection, { title: `Closed (${closedActions.length})`, accentColour: C.muted, actions: closedActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, dimmed: true })) : React.createElement("div", { style: { padding: '32px', textAlign: 'center', color: C.muted } }, "No closed actions.");
-        return null; // fall through to original 'all' render
-    })(), actionFilter === 'all' && actions.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '48px 32px', textAlign: 'center' } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 } }, "No actions assigned to you yet"), React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Actions raised in meetings and assigned to you will appear here."))) : actionFilter === 'all' ? (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 24 } }, overdueActions.length > 0 && (React.createElement(ActionSection, { title: "Overdue", accentColour: C.redStatus, actions: overdueActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users })), dueSoonActions.length > 0 && (React.createElement(ActionSection, { title: "Due this week", accentColour: C.amber, actions: dueSoonActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users })), otherOpenActions.length > 0 && (React.createElement(ActionSection, { title: overdueActions.length === 0 && dueSoonActions.length === 0 ? 'Open actions' : 'Upcoming', accentColour: C.red, actions: otherOpenActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users })), closedActions.length > 0 && (React.createElement("div", null, React.createElement("button", { onClick: () => setShowClosedActions(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 0', fontSize: 11, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif", marginBottom: showClosedActions ? 10 : 0 } }, React.createElement("span", { style: { display: 'inline-block', transform: showClosedActions ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 10 } }, "\u25B6"), showClosedActions ? `Hide closed actions` : `Show ${closedActions.length} closed action${closedActions.length !== 1 ? 's' : ''}`), showClosedActions && (React.createElement(ActionSection, { title: `Closed (${closedActions.length})`, accentColour: C.muted, actions: closedActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, dimmed: true })))), openActions.length === 0 && overdueActions.length === 0 && (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '48px 32px', textAlign: 'center' } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.green, marginBottom: 6 } }, "All clear"), React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "No open actions. Switch to \"All\" to see your history."))))) : null))));
+            return renderFiltered('closed', 'Closed', C.muted, true);
+        return null; // fall through to 'all' render
+    })(), actionFilter === 'all' && actions.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '48px 32px', textAlign: 'center' } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 } }, "No actions assigned to you yet"), React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Actions raised in meetings and assigned to you will appear here."))) : actionFilter === 'all' ? (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 28 } },
+        renderRelationGroup('owned', owned),
+        renderRelationGroup('collab', collab),
+        closedActions.length > 0 && (React.createElement("div", null, React.createElement("button", { onClick: () => setShowClosedActions(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 0', fontSize: 11, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif", marginBottom: showClosedActions ? 10 : 0 } }, React.createElement("span", { style: { display: 'inline-block', transform: showClosedActions ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 10 } }, "\u25B6"), showClosedActions ? `Hide closed actions` : `Show ${closedActions.length} closed action${closedActions.length !== 1 ? 's' : ''}`), showClosedActions && (React.createElement(ActionSection, { title: `Closed (${closedActions.length})`, accentColour: C.muted, actions: closedActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, dimmed: true })))),
+        openActions.length === 0 && overdueActions.length === 0 && (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '48px 32px', textAlign: 'center' } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.green, marginBottom: 6 } }, "All clear"), React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "No open actions. Switch to \"All\" to see your history."))))) : null))));
 }
 // ============================================================
 // ACTION SECTION — grouped block within My Actions
 // ============================================================
-function ActionSection({ title, accentColour, actions, projectLookup, meetings, today, onToggle, onOpenMeeting, dimmed, users }) {
-    return (React.createElement("div", null, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 } }, React.createElement("div", { style: { width: 3, height: 16, background: accentColour, borderRadius: 2, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: accentColour, fontFamily: "'DM Sans', system-ui, sans-serif" } }, title)), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, actions.map(action => (React.createElement(MyActionCard, { key: action.id, action: action, project: projectLookup[action.project_id], meeting: meetings[action.meeting_id], today: today, accentColour: accentColour, onToggle: onToggle, onOpenMeeting: onOpenMeeting, dimmed: dimmed, users: users }))))));
+function ActionSection({ title, accentColour, actions, projectLookup, meetings, today, onToggle, onOpenMeeting, dimmed, users, showOwnerNameAs }) {
+    return (React.createElement("div", null, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 } }, React.createElement("div", { style: { width: 3, height: 16, background: accentColour, borderRadius: 2, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: accentColour, fontFamily: "'DM Sans', system-ui, sans-serif" } }, title)), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, actions.map(action => (React.createElement(MyActionCard, { key: action.id, action: action, project: projectLookup[action.project_id], meeting: meetings[action.meeting_id], today: today, accentColour: accentColour, onToggle: onToggle, onOpenMeeting: onOpenMeeting, dimmed: dimmed, users: users, showOwnerNameAs: showOwnerNameAs }))))));
 }
 // ============================================================
 // MY ACTION CARD — single action row
 // ============================================================
-function MyActionCard({ action, project, meeting, today, accentColour, onToggle, onOpenMeeting, dimmed, users }) {
+function MyActionCard({ action, project, meeting, today, accentColour, onToggle, onOpenMeeting, dimmed, users, showOwnerNameAs }) {
     const [toggling, setToggling] = useState(false);
     const isClosed = action.status === 'closed';
     const isOverdue = !isClosed && action.due_date && action.due_date < today;
@@ -1886,7 +1958,15 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
     const meetingCfg = meeting ? (MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }) : null;
     const [showCloseForm, setShowCloseForm] = useState(false);
     const [closeNote, setCloseNote] = useState('');
+    // Collaborator cards: no close authority, owner displayed prominently.
+    const isCollaboratorView = showOwnerNameAs === 'collaborator';
+    const ownerUser = isCollaboratorView && action.owner_user_id
+        ? (users || []).find(u => u.id === action.owner_user_id)
+        : null;
+    const ownerLabel = ownerUser ? ownerUser.display_name : (action.owner_name_fallback || 'Unknown owner');
     const handleToggle = async () => {
+        if (isCollaboratorView)
+            return; // collaborators can't close
         if (!isClosed) {
             // Opening close form for note — don't toggle directly
             setShowCloseForm(true);
@@ -1930,13 +2010,14 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
             alignItems: 'start',
             background: isOverdue ? '#FFF5F5' : C.white,
             padding: '14px 16px',
-        } }, React.createElement("div", { style: { paddingTop: 2 } }, React.createElement("button", { onClick: handleToggle, disabled: toggling, title: isClosed ? 'Mark as open' : 'Mark as done', style: {
+        } }, React.createElement("div", { style: { paddingTop: 2 } }, React.createElement("button", { onClick: handleToggle, disabled: toggling || isCollaboratorView, title: isCollaboratorView ? `Only ${ownerLabel} (the owner) can close this action` : (isClosed ? 'Mark as open' : 'Mark as done'), style: {
             width: 30, height: 30, borderRadius: '50%',
-            border: `2px solid ${isClosed ? C.green : isOverdue ? C.redStatus : accentColour}`,
-            background: isClosed ? C.green : 'transparent',
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: `2px solid ${isCollaboratorView ? C.mist : (isClosed ? C.green : isOverdue ? C.redStatus : accentColour)}`,
+            background: isCollaboratorView ? C.bg : (isClosed ? C.green : 'transparent'),
+            opacity: isCollaboratorView ? 0.6 : 1,
+            cursor: isCollaboratorView ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
-        } }, isClosed && React.createElement("span", { style: { color: C.white, fontSize: 14, fontWeight: 700, lineHeight: 1 } }, "\u2713"))), React.createElement("div", null, isOverdue && (React.createElement("div", { style: {
+        } }, isCollaboratorView ? React.createElement("span", { style: { color: C.mist, fontSize: 14, lineHeight: 1 } }, "\u{1F512}") : (isClosed && React.createElement("span", { style: { color: C.white, fontSize: 14, fontWeight: 700, lineHeight: 1 } }, "\u2713")))), React.createElement("div", null, isOverdue && (React.createElement("div", { style: {
             display: 'inline-flex', alignItems: 'center', gap: 6,
             background: C.redStatus, color: C.white,
             padding: '2px 10px', borderRadius: 3, marginBottom: 8,
@@ -1947,12 +2028,15 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
             color: isClosed ? C.muted : isOverdue ? C.redStatus : C.text,
             textDecoration: isClosed ? 'line-through' : 'none',
             lineHeight: 1.4, marginBottom: 6,
-        } }, action.description), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' } }, priority !== 'normal' && (React.createElement("span", { style: {
+        } }, action.description), isCollaboratorView && React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '6px 10px', background: C.cordSoft, border: `1px solid ${C.cordMid}`, borderRadius: 3 } },
+            React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.cord } }, "Owner"),
+            React.createElement("span", { style: { fontSize: 12, fontWeight: 600, color: C.text } }, ownerLabel),
+            React.createElement("span", { style: { fontSize: 11, color: C.muted, fontStyle: 'italic', marginLeft: 'auto' } }, "Only the owner can close")), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' } }, priority !== 'normal' && (React.createElement("span", { style: {
             background: priorityStyle.bg, color: priorityStyle.fg,
             padding: '2px 8px', borderRadius: 3,
             fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
             fontFamily: "'DM Sans', system-ui, sans-serif",
-        } }, priorityStyle.label)), action._relation === 'collaborator' && React.createElement("span", { title: "You're a collaborator on this action; the owner is responsible for closing it.", style: { background: C.cordSoft, color: C.cord, border: `1px solid ${C.cordMid}`, borderRadius: 3, padding: '2px 8px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Collaborating"), project && (React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: C.red } }, project.name, project.project_number && React.createElement("span", { style: { color: C.muted, fontWeight: 400 } }, " #", project.project_number))), meetingCfg && meeting && (React.createElement("button", { onClick: () => onOpenMeeting(action.meeting_id), style: {
+        } }, priorityStyle.label)), project && (React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: C.red } }, project.name, project.project_number && React.createElement("span", { style: { color: C.muted, fontWeight: 400 } }, " #", project.project_number))), meetingCfg && meeting && (React.createElement("button", { onClick: () => onOpenMeeting(action.meeting_id), style: {
             background: C.redSoft, border: `1px solid ${C.redMid}`,
             borderRadius: 3, padding: '2px 8px', cursor: 'pointer',
             fontSize: 10, fontWeight: 600, color: C.red,
