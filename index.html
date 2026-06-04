@@ -1719,6 +1719,101 @@ function SaveIndicator({ status, light }) {
     return null;
 }
 // ============================================================
+// QUERY UI — raise / answer / track escalations against an action
+// (Phase 2c. Action stays open throughout; a query is an overlay.)
+// ============================================================
+// Small inline form to raise a query against an action and route it
+// to a target user. Used from action cards (My Actions) and the
+// meeting capture pane.
+function RaiseQueryForm({ users, currentUser, onSubmit, onCancel }) {
+    const [text, setText] = useState('');
+    const [targetId, setTargetId] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const ready = text.trim().length > 0 && !!targetId && !busy;
+    const submit = async () => {
+        if (!ready)
+            return;
+        setBusy(true);
+        try {
+            await onSubmit(text.trim(), targetId);
+        }
+        catch (e) {
+            setBusy(false);
+            return; // onSubmit alerts on failure; keep form open
+        }
+        // success — parent unmounts or clears the form
+    };
+    // Exclude self as a routing target — you don't route a question to yourself.
+    const pickList = (users || []).filter(u => u.id !== (currentUser && currentUser.id));
+    return React.createElement("div", { style: { marginTop: 8, background: C.cordSoft, border: `1px solid ${C.cordMid}`, borderRadius: 4, padding: 12 } },
+        React.createElement("div", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.cord, marginBottom: 6 } }, "Raise a query"),
+        React.createElement("textarea", { value: text, onChange: e => setText(e.target.value), placeholder: "What do you need to know or decide?", rows: 2, autoFocus: true, style: Object.assign(Object.assign({}, inputStyle()), { fontSize: 12, resize: 'vertical', marginBottom: 8 }) }),
+        React.createElement("div", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.muted, marginBottom: 4 } }, "Route to"),
+        React.createElement("div", { style: { marginBottom: 10 } }, React.createElement(UserPickerField, { users: pickList, value: targetId, onChange: setTargetId, required: true })),
+        React.createElement("div", { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } },
+            React.createElement("button", { onClick: onCancel, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel"),
+            React.createElement("button", { onClick: submit, disabled: !ready, style: Object.assign(Object.assign({}, btnPrimary()), { background: C.cord, fontSize: 11, opacity: ready ? 1 : 0.4, cursor: ready ? 'pointer' : 'not-allowed' }) }, busy ? "Sending\u2026" : "Send query")));
+}
+// One query routed to the current user — needs an answer.
+function QueryAnswerCard({ query, action, project, raiserName, onAnswer }) {
+    const [open, setOpen] = useState(false);
+    const [text, setText] = useState('');
+    const [busy, setBusy] = useState(false);
+    const ready = text.trim().length > 0 && !busy;
+    const submit = async () => {
+        if (!ready)
+            return;
+        setBusy(true);
+        try {
+            await onAnswer(query, text.trim());
+        }
+        catch (e) {
+            setBusy(false);
+        }
+    };
+    return React.createElement("div", { style: { border: `1px solid ${C.amber}`, borderLeft: `4px solid ${C.amber}`, borderRadius: 4, background: '#FFFBF2', padding: '12px 14px' } },
+        React.createElement("div", { style: { fontSize: 13, color: C.text, lineHeight: 1.45, marginBottom: 6, fontWeight: 600 } }, query.query_text),
+        React.createElement("div", { style: { fontSize: 11, color: C.muted, display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 } },
+            React.createElement("span", null, "From ", React.createElement("strong", { style: { color: C.text } }, raiserName)),
+            React.createElement("span", null, "\u00B7 ", formatRelative(query.raised_at)),
+            project && React.createElement("span", { style: { color: C.red, fontWeight: 600 } }, "\u00B7 ", project.name),
+            action && React.createElement("span", { style: { fontStyle: 'italic' } }, "\u00B7 ", action.description)),
+        !open
+            ? React.createElement("button", { onClick: () => setOpen(true), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.amber, fontSize: 11 }) }, "Answer")
+            : React.createElement("div", { style: { display: 'flex', gap: 6 } },
+                React.createElement("input", { value: text, onChange: e => setText(e.target.value), placeholder: "Your answer\u2026", autoFocus: true, style: Object.assign(Object.assign({}, inputStyle()), { flex: 1, fontSize: 12 }), onKeyDown: e => { if (e.key === 'Enter' && ready) submit(); } }),
+                React.createElement("button", { onClick: submit, disabled: !ready, style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: ready ? 1 : 0.4 }) }, busy ? "\u2026" : "Send"),
+                React.createElement("button", { onClick: () => { setOpen(false); setText(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")));
+}
+// One query the current user raised — awaiting the target's answer.
+function QueryWaitingCard({ query, action, project, targetName, onWithdraw }) {
+    return React.createElement("div", { style: { border: `1px solid ${C.cordMid}`, borderLeft: `4px solid ${C.cord}`, borderRadius: 4, background: C.cordSoft, padding: '12px 14px' } },
+        React.createElement("div", { style: { fontSize: 13, color: C.text, lineHeight: 1.45, marginBottom: 6 } }, query.query_text),
+        React.createElement("div", { style: { fontSize: 11, color: C.muted, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' } },
+            React.createElement("span", null, "Routed to ", React.createElement("strong", { style: { color: C.cord } }, targetName)),
+            React.createElement("span", null, "\u00B7 raised ", formatRelative(query.raised_at)),
+            project && React.createElement("span", { style: { color: C.red, fontWeight: 600 } }, "\u00B7 ", project.name),
+            action && React.createElement("span", { style: { fontStyle: 'italic' } }, "\u00B7 ", action.description),
+            React.createElement("button", { onClick: () => onWithdraw(query), style: { marginLeft: 'auto', background: 'transparent', border: 'none', color: C.mist, cursor: 'pointer', fontSize: 11, fontWeight: 600, textDecoration: 'underline' }, title: "Withdraw this query" }, "Withdraw")));
+}
+// Top-of-page panel: queries needing my answer + queries I'm waiting on.
+function QueriesPanel({ needsMyAnswer, awaitingMine, actionLookup, projectLookup, users, onAnswer, onWithdraw }) {
+    if (needsMyAnswer.length === 0 && awaitingMine.length === 0)
+        return null;
+    const nameOf = (id) => { const u = (users || []).find(x => x.id === id); return u ? u.display_name : 'Someone'; };
+    return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 18, marginBottom: 28 } },
+        needsMyAnswer.length > 0 && React.createElement("div", null,
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, borderTop: `2px solid ${C.amber}`, paddingTop: 10 } },
+                React.createElement("span", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 700, color: C.amber, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Queries for you"),
+                React.createElement("span", { style: { fontSize: 11, color: C.muted, fontStyle: 'italic' } }, needsMyAnswer.length, " awaiting your answer")),
+            React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, needsMyAnswer.map(q => React.createElement(QueryAnswerCard, { key: q.id, query: q, action: actionLookup[q.action_id], project: (actionLookup[q.action_id] && projectLookup[actionLookup[q.action_id].project_id]) || null, raiserName: nameOf(q.raised_by), onAnswer: onAnswer })))),
+        awaitingMine.length > 0 && React.createElement("div", null,
+            React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, borderTop: `2px solid ${C.cord}`, paddingTop: 10 } },
+                React.createElement("span", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 700, color: C.cord, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Your queries"),
+                React.createElement("span", { style: { fontSize: 11, color: C.muted, fontStyle: 'italic' } }, awaitingMine.length, " awaiting a reply")),
+            React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, awaitingMine.map(q => React.createElement(QueryWaitingCard, { key: q.id, query: q, action: actionLookup[q.action_id], project: (actionLookup[q.action_id] && projectLookup[actionLookup[q.action_id].project_id]) || null, targetName: nameOf(q.target_user_id), onWithdraw: onWithdraw })))));
+}
+// ============================================================
 // MY ACTIONS VIEW
 // ============================================================
 function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting }) {
@@ -1728,6 +1823,11 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
     const [error, setError] = useState(null);
     const [actionFilter, setActionFilter] = useState('all'); // 'all'|'overdue'|'due-soon'|'open'|'closed'
     const [showClosedActions, setShowClosedActions] = useState(false);
+    // Open queries involving the current user (as target or raiser) + a
+    // lookup of the actions those queries sit on (some may be on actions the
+    // user neither owns nor collaborates on — e.g. routed to a senior).
+    const [queries, setQueries] = useState([]);
+    const [actionCtx, setActionCtx] = useState({});
     // Build project lookup
     const projectLookup = useMemo(() => {
         const m = {};
@@ -1781,9 +1881,36 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
                         meetingsMap[m.id] = Object.assign(Object.assign({}, m), { meeting_type: m.meeting_type === 'master-resource' ? 'pre-con' : m.meeting_type });
                     });
                 }
+                // Open queries involving this user — either routed to them
+                // (need an answer) or raised by them (awaiting a reply).
+                const { data: qData, error: qErr } = await sb
+                    .from('action_queries')
+                    .select('*')
+                    .is('answered_at', null)
+                    .or(`target_user_id.eq.${currentUser.id},raised_by.eq.${currentUser.id}`);
+                if (qErr)
+                    throw qErr;
+                const myQueries = qData || [];
+                // Some of those queries may sit on actions not in `merged`
+                // (e.g. a query routed to a senior who doesn't own/collab the
+                // action). Fetch those so we can show context in the panel.
+                const ctxLookup = {};
+                merged.forEach(a => { ctxLookup[a.id] = a; });
+                const missingActionIds = [...new Set(myQueries.map(q => q.action_id))].filter(id => !ctxLookup[id]);
+                if (missingActionIds.length > 0) {
+                    const { data: ctxData, error: ctxErr } = await sb
+                        .from('actions')
+                        .select('*')
+                        .in('id', missingActionIds);
+                    if (ctxErr)
+                        throw ctxErr;
+                    (ctxData || []).forEach(a => { ctxLookup[a.id] = a; });
+                }
                 if (mounted) {
                     setActions(merged);
                     setMeetings(meetingsMap);
+                    setQueries(myQueries);
+                    setActionCtx(ctxLookup);
                     setLoading(false);
                 }
             }
@@ -1832,6 +1959,64 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
             alert('Failed to update action: ' + e.message);
         }
     };
+    // ----- Query handlers -----
+    // Raise a query against an action, routed to a target user. The action's
+    // own status is untouched — a query is an overlay.
+    const raiseQuery = async (action, text, targetId) => {
+        try {
+            const { data, error } = await sb.from('action_queries').insert({
+                action_id: action.id,
+                org_id: profile.org_id, // explicit; trigger also backstops NULL
+                raised_by: currentUser.id,
+                target_user_id: targetId,
+                query_text: text,
+            }).select().single();
+            if (error)
+                throw error;
+            setQueries(prev => [...prev, data]);
+            // Ensure the action is in the context lookup for the panel.
+            setActionCtx(prev => prev[action.id] ? prev : Object.assign({}, prev, { [action.id]: action }));
+        }
+        catch (e) {
+            // UNIQUE partial index violation => a query is already open.
+            const msg = /duplicate key|unique/i.test(e.message || '')
+                ? 'There is already an open query on this action. Resolve it before raising another.'
+                : 'Failed to raise query: ' + e.message;
+            alert(msg);
+            throw e;
+        }
+    };
+    // Answer (resolve) a query routed to the current user.
+    const answerQuery = async (query, answerText) => {
+        try {
+            const { data, error } = await sb.from('action_queries').update({
+                answer_text: answerText,
+                answered_by: currentUser.id,
+                answered_at: new Date().toISOString(),
+            }).eq('id', query.id).select().single();
+            if (error)
+                throw error;
+            setQueries(prev => prev.filter(q => q.id !== query.id));
+        }
+        catch (e) {
+            alert('Failed to answer query: ' + e.message);
+            throw e;
+        }
+    };
+    // Withdraw a query the current user raised (removes it).
+    const withdrawQuery = async (query) => {
+        if (!window.confirm('Withdraw this query? It will be removed.'))
+            return;
+        try {
+            const { error } = await sb.from('action_queries').delete().eq('id', query.id);
+            if (error)
+                throw error;
+            setQueries(prev => prev.filter(q => q.id !== query.id));
+        }
+        catch (e) {
+            alert('Failed to withdraw query: ' + e.message);
+        }
+    };
     const today = new Date().toISOString().slice(0, 10);
     // Split into two top-level sections by relation: actions you own (full
     // close authority) vs. actions you collaborate on (the owner closes).
@@ -1866,6 +2051,29 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
     const dueSoonActions = [...owned.dueSoon, ...collab.dueSoon];
     const otherOpenActions = [...owned.other, ...collab.other];
     const closedActions = [...owned.closed, ...collab.closed];
+    // ----- Query-derived values -----
+    // Combined action lookup: actions in this view plus any context actions
+    // a query sits on. Used by the panel and by raiseQuery.
+    const actionLookup = useMemo(() => {
+        const m = Object.assign({}, actionCtx);
+        actions.forEach(a => { m[a.id] = a; });
+        return m;
+    }, [actions, actionCtx]);
+    // One open query per action (enforced by the partial unique index), so a
+    // simple action_id -> query map is sufficient for card pills.
+    const openQueriesByAction = useMemo(() => {
+        const m = {};
+        queries.forEach(q => { m[q.action_id] = q; });
+        return m;
+    }, [queries]);
+    const needsMyAnswer = queries.filter(q => q.target_user_id === currentUser.id);
+    const awaitingMine = queries.filter(q => q.raised_by === currentUser.id && q.target_user_id !== currentUser.id);
+    // Bundle passed down through ActionSection to each card.
+    const queryCtx = {
+        currentUser, users,
+        openQueriesByAction,
+        onRaiseQuery: raiseQuery,
+    };
     if (loading)
         return React.createElement(SplashScreen, { message: "Loading your actions\u2026" });
     if (error)
@@ -1890,9 +2098,9 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
         const headingColour = isCollab ? C.cord : C.red;
         // Within the all-view, render the same status subgroupings.
         const tertiary = React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 14 } },
-            b.overdue.length > 0 && (React.createElement(ActionSection, { title: "Overdue", accentColour: C.redStatus, actions: b.overdue, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
-            b.dueSoon.length > 0 && (React.createElement(ActionSection, { title: "Due this week", accentColour: C.amber, actions: b.dueSoon, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
-            b.other.length > 0 && (React.createElement(ActionSection, { title: b.overdue.length === 0 && b.dueSoon.length === 0 ? 'Open actions' : 'Upcoming', accentColour: headingColour, actions: b.other, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, showOwnerNameAs: isCollab ? 'collaborator' : undefined })));
+            b.overdue.length > 0 && (React.createElement(ActionSection, { title: "Overdue", accentColour: C.redStatus, actions: b.overdue, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
+            b.dueSoon.length > 0 && (React.createElement(ActionSection, { title: "Due this week", accentColour: C.amber, actions: b.dueSoon, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })),
+            b.other.length > 0 && (React.createElement(ActionSection, { title: b.overdue.length === 0 && b.dueSoon.length === 0 ? 'Open actions' : 'Upcoming', accentColour: headingColour, actions: b.other, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, showOwnerNameAs: isCollab ? 'collaborator' : undefined })));
         return React.createElement("div", { key: kind, style: { display: 'flex', flexDirection: 'column', gap: 12 } },
             React.createElement("div", { style: { borderTop: `2px solid ${headingColour}`, paddingTop: 10 } },
                 React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' } },
@@ -1911,7 +2119,7 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
                 boxShadow: active ? `0 0 0 1px ${p.accent}` : 'none',
                 transition: 'border-color 0.12s, box-shadow 0.12s',
             } }, React.createElement("span", { style: { fontSize: 16, fontWeight: 700, color: hasCount ? p.accent : 'rgba(232,234,232,0.4)', lineHeight: 1 } }, p.count), React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: hasCount ? 'rgba(232,234,232,0.85)' : 'rgba(232,234,232,0.4)' } }, p.label)));
-    })))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto' } }, (() => {
+    })))), React.createElement("main", { style: { padding: '20px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 900, margin: '0 auto' } }, React.createElement(QueriesPanel, { needsMyAnswer: needsMyAnswer, awaitingMine: awaitingMine, actionLookup: actionLookup, projectLookup: projectLookup, users: users, onAnswer: answerQuery, onWithdraw: withdrawQuery }), (() => {
         const show = actionFilter;
         // Within a filter view, render owned section and collab section
         // (skipping each if empty) so the visual structure mirrors the
@@ -1922,8 +2130,8 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
             if (ownedSet.length === 0 && collabSet.length === 0)
                 return React.createElement("div", { style: { padding: '32px', textAlign: 'center', color: C.muted } }, `No ${title.toLowerCase()} actions.`);
             return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 20 } },
-                ownedSet.length > 0 && React.createElement(ActionSection, { title: `${title} \u00B7 your actions (${ownedSet.length})`, accentColour: accent, actions: ownedSet, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, dimmed: dimmed }),
-                collabSet.length > 0 && React.createElement(ActionSection, { title: `${title} \u00B7 collaborating (${collabSet.length})`, accentColour: C.cord, actions: collabSet, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, dimmed: dimmed, showOwnerNameAs: 'collaborator' }));
+                ownedSet.length > 0 && React.createElement(ActionSection, { title: `${title} \u00B7 your actions (${ownedSet.length})`, accentColour: accent, actions: ownedSet, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, dimmed: dimmed }),
+                collabSet.length > 0 && React.createElement(ActionSection, { title: `${title} \u00B7 collaborating (${collabSet.length})`, accentColour: C.cord, actions: collabSet, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, dimmed: dimmed, showOwnerNameAs: 'collaborator' }));
         };
         if (show === 'overdue')
             return renderFiltered('overdue', 'Overdue', C.redStatus, false);
@@ -1937,21 +2145,25 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
     })(), actionFilter === 'all' && actions.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '48px 32px', textAlign: 'center' } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 } }, "No actions assigned to you yet"), React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "Actions raised in meetings and assigned to you will appear here."))) : actionFilter === 'all' ? (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 28 } },
         renderRelationGroup('owned', owned),
         renderRelationGroup('collab', collab),
-        closedActions.length > 0 && (React.createElement("div", null, React.createElement("button", { onClick: () => setShowClosedActions(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 0', fontSize: 11, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif", marginBottom: showClosedActions ? 10 : 0 } }, React.createElement("span", { style: { display: 'inline-block', transform: showClosedActions ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 10 } }, "\u25B6"), showClosedActions ? `Hide closed actions` : `Show ${closedActions.length} closed action${closedActions.length !== 1 ? 's' : ''}`), showClosedActions && (React.createElement(ActionSection, { title: `Closed (${closedActions.length})`, accentColour: C.muted, actions: closedActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, dimmed: true })))),
+        closedActions.length > 0 && (React.createElement("div", null, React.createElement("button", { onClick: () => setShowClosedActions(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 0', fontSize: 11, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif", marginBottom: showClosedActions ? 10 : 0 } }, React.createElement("span", { style: { display: 'inline-block', transform: showClosedActions ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 10 } }, "\u25B6"), showClosedActions ? `Hide closed actions` : `Show ${closedActions.length} closed action${closedActions.length !== 1 ? 's' : ''}`), showClosedActions && (React.createElement(ActionSection, { title: `Closed (${closedActions.length})`, accentColour: C.muted, actions: closedActions, projectLookup: projectLookup, meetings: meetings, today: today, onToggle: toggleStatus, onOpenMeeting: onOpenMeeting, users: users, queryCtx: queryCtx, dimmed: true })))),
         openActions.length === 0 && overdueActions.length === 0 && (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '48px 32px', textAlign: 'center' } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.green, marginBottom: 6 } }, "All clear"), React.createElement("div", { style: { fontSize: 12, color: C.muted } }, "No open actions. Switch to \"All\" to see your history."))))) : null))));
 }
 // ============================================================
 // ACTION SECTION — grouped block within My Actions
 // ============================================================
-function ActionSection({ title, accentColour, actions, projectLookup, meetings, today, onToggle, onOpenMeeting, dimmed, users, showOwnerNameAs }) {
-    return (React.createElement("div", null, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 } }, React.createElement("div", { style: { width: 3, height: 16, background: accentColour, borderRadius: 2, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: accentColour, fontFamily: "'DM Sans', system-ui, sans-serif" } }, title)), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, actions.map(action => (React.createElement(MyActionCard, { key: action.id, action: action, project: projectLookup[action.project_id], meeting: meetings[action.meeting_id], today: today, accentColour: accentColour, onToggle: onToggle, onOpenMeeting: onOpenMeeting, dimmed: dimmed, users: users, showOwnerNameAs: showOwnerNameAs }))))));
+function ActionSection({ title, accentColour, actions, projectLookup, meetings, today, onToggle, onOpenMeeting, dimmed, users, showOwnerNameAs, queryCtx }) {
+    return (React.createElement("div", null, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 } }, React.createElement("div", { style: { width: 3, height: 16, background: accentColour, borderRadius: 2, flexShrink: 0 } }), React.createElement("span", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: accentColour, fontFamily: "'DM Sans', system-ui, sans-serif" } }, title)), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6 } }, actions.map(action => (React.createElement(MyActionCard, { key: action.id, action: action, project: projectLookup[action.project_id], meeting: meetings[action.meeting_id], today: today, accentColour: accentColour, onToggle: onToggle, onOpenMeeting: onOpenMeeting, dimmed: dimmed, users: users, showOwnerNameAs: showOwnerNameAs, queryCtx: queryCtx }))))));
 }
 // ============================================================
 // MY ACTION CARD — single action row
 // ============================================================
-function MyActionCard({ action, project, meeting, today, accentColour, onToggle, onOpenMeeting, dimmed, users, showOwnerNameAs }) {
+function MyActionCard({ action, project, meeting, today, accentColour, onToggle, onOpenMeeting, dimmed, users, showOwnerNameAs, queryCtx }) {
     const [toggling, setToggling] = useState(false);
+    const [showRaise, setShowRaise] = useState(false);
     const isClosed = action.status === 'closed';
+    const openQuery = queryCtx && queryCtx.openQueriesByAction ? queryCtx.openQueriesByAction[action.id] : null;
+    const canRaiseQuery = queryCtx && typeof queryCtx.onRaiseQuery === 'function' && !isClosed && !openQuery;
+    const queryNameOf = (id) => { const list = (queryCtx && queryCtx.users) || users || []; const u = list.find(x => x.id === id); return u ? u.display_name : 'someone'; };
     const isOverdue = !isClosed && action.due_date && action.due_date < today;
     const priority = action.priority || 'normal';
     const isHighPriority = priority === 'high' || priority === 'urgent';
@@ -2051,7 +2263,13 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
     })())), showCloseForm && (React.createElement("div", { style: { background: C.greenLight, border: `1px solid ${C.green}`, borderTop: 'none', padding: 12 } }, React.createElement("div", { style: { fontSize: 10, color: C.green, fontWeight: 700, marginBottom: 6 } }, "Close-out note required \u00B7 Completed: ", new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("input", { value: closeNote, onChange: e => setCloseNote(e.target.value), placeholder: "What was done to resolve this?", style: Object.assign(Object.assign({}, inputStyle()), { flex: 1, fontSize: 12 }), autoFocus: true, onKeyDown: e => {
             if (e.key === 'Enter' && closeNote.trim())
                 handleConfirmClose();
-        } }), React.createElement("button", { onClick: handleConfirmClose, disabled: !closeNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: closeNote.trim() ? 1 : 0.4 }) }, "Done"), React.createElement("button", { onClick: () => { setShowCloseForm(false); setCloseNote(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel"))))));
+        } }), React.createElement("button", { onClick: handleConfirmClose, disabled: !closeNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: closeNote.trim() ? 1 : 0.4 }) }, "Done"), React.createElement("button", { onClick: () => { setShowCloseForm(false); setCloseNote(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (openQuery || canRaiseQuery) && React.createElement("div", { style: { padding: '8px 14px', borderTop: `1px solid ${C.line}`, background: C.bg } }, openQuery
+        ? React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+            React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? C.amber : C.cord, background: openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? '#FFF6E6' : C.cordSoft, border: `1px solid ${openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? C.amber : C.cordMid}`, padding: '2px 8px', borderRadius: 3 } }, "\u2753 Open query"),
+            React.createElement("span", { style: { fontSize: 11, color: C.muted } }, openQuery.target_user_id === (queryCtx && queryCtx.currentUser && queryCtx.currentUser.id) ? `from ${queryNameOf(openQuery.raised_by)} \u00B7 needs your answer` : `routed to ${queryNameOf(openQuery.target_user_id)}`))
+        : !showRaise
+            ? React.createElement("button", { onClick: () => setShowRaise(true), style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: C.cord, padding: 0, textDecoration: 'underline', fontFamily: "'DM Sans', system-ui, sans-serif" } }, "\u2753 Raise a query")
+            : React.createElement(RaiseQueryForm, { users: (queryCtx && queryCtx.users) || users, currentUser: queryCtx && queryCtx.currentUser, onSubmit: async (text, targetId) => { await queryCtx.onRaiseQuery(action, text, targetId); setShowRaise(false); }, onCancel: () => setShowRaise(false) }))));
 }
 // ============================================================
 // USER PICKER FIELD — reusable single-user dropdown
@@ -2520,6 +2738,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     const [entries, setEntries] = useState({}); // { projectId: entry }
     const [actions, setActions] = useState([]);
     const [actionAssignees, setActionAssignees] = useState([]); // collaborator rows for this meeting's actions
+    const [actionQueries, setActionQueries] = useState([]); // open queries on this meeting's actions
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [activeProjectId, setActiveProjectId] = useState(null);
@@ -2566,6 +2785,15 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
                             .in('action_id', actionIds);
                         if (mounted && assigneeData)
                             setActionAssignees(assigneeData);
+                    } catch (_) { /* table may be absent on older schemas */ }
+                    // Open queries on these actions, for the per-action overlay.
+                    try {
+                        const { data: queryData } = await sb.from('action_queries')
+                            .select('*')
+                            .is('answered_at', null)
+                            .in('action_id', actionIds);
+                        if (mounted && queryData)
+                            setActionQueries(queryData);
                     } catch (_) { /* table may be absent on older schemas */ }
                 }
                 setAttendees((attRes && attRes.data) ? attRes.data : []);
@@ -2727,7 +2955,52 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
         });
         return m;
     }, [actionAssignees, users]);
-    // Seed attendance defaults the first time the chair opens the register on
+    // Map actionId → its single open query (partial unique index guarantees
+    // at most one). Used for the per-action query overlay in ActionRow.
+    const openQueryByAction = useMemo(() => {
+        const m = {};
+        (actionQueries || []).forEach(q => { m[q.action_id] = q; });
+        return m;
+    }, [actionQueries]);
+    // Raise a query against an action during the meeting, routed to a target.
+    const raiseQueryOnAction = async (action, text, targetId) => {
+        try {
+            const { data, error } = await sb.from('action_queries').insert({
+                action_id: action.id,
+                org_id: profile.org_id,
+                raised_by: currentUser.id,
+                target_user_id: targetId,
+                query_text: text,
+            }).select().single();
+            if (error)
+                throw error;
+            setActionQueries(prev => [...(prev || []), data]);
+        }
+        catch (e) {
+            const msg = /duplicate key|unique/i.test(e.message || '')
+                ? 'There is already an open query on this action.'
+                : 'Failed to raise query: ' + e.message;
+            alert(msg);
+            throw e;
+        }
+    };
+    // Answer (resolve) an open query — owner or routed target only (gated in UI).
+    const answerQueryOnAction = async (query, answerText) => {
+        try {
+            const { error } = await sb.from('action_queries').update({
+                answer_text: answerText,
+                answered_by: currentUser.id,
+                answered_at: new Date().toISOString(),
+            }).eq('id', query.id);
+            if (error)
+                throw error;
+            setActionQueries(prev => (prev || []).filter(q => q.id !== query.id));
+        }
+        catch (e) {
+            alert('Failed to answer query: ' + e.message);
+            throw e;
+        }
+    };
     // a meeting that has none recorded. Resource meetings default to the
     // departmental team; fall back to project team if the department is empty.
     const seedAttendanceIfEmpty = async () => {
@@ -3181,13 +3454,13 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
                 background: activeProjectId === p.id ? C.redSoft : 'transparent',
                 borderBottom: `1px solid ${C.line}`,
             } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 } }, React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, "#", p.project_number)), hasNote && (React.createElement("span", { title: "Notes captured this meeting", style: { width: 7, height: 7, borderRadius: '50%', background: C.green, flexShrink: 0, marginTop: 5 } }))), status && (React.createElement("div", { style: { marginTop: 4 } }, React.createElement("span", { style: { display: 'inline-block', fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3, background: status.bg, color: status.fg } }, status.short)))));
-    })))))), React.createElement("div", null, !activeProject ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 48, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { fontSize: 14, marginBottom: 8 } }, "Select a project from the left to start capturing notes"), React.createElement("div", { style: { fontSize: 12 } }, "Notes auto-save as you type. Actions can be added at any time."))) : (React.createElement(ProjectCapturePane, { project: activeProject, entry: activeEntry, projectActions: projectActions, users: users, isReadOnly: isReadOnly, saveStatus: saveStatus[activeProject.id], meetingCfg: meetingCfg, latestNote: latestNotes ? latestNotes[activeProject.id] : null, keyDates: keyDates ? (keyDates[activeProject.id] || []) : [], isSenior: isSenior, currentUser: currentUser, isChair: isChair, handoffs: handoffs.filter(h => h.project_id === activeProject.id), resultingActions: resultingActions, onCreateHandoff: createHandoff, onAcknowledgeHandoff: acknowledgeHandoff, onConvertHandoff: convertHandoffToAction, meetingType: meeting.meeting_type, onKeyDatesChange: onKeyDatesChange, onUpdateField: (field, value) => updateEntryField(activeProject.id, field, value), onMarkReviewed: (field, val, fromDate) => markReviewedNoChange(activeProject.id, field, val, fromDate), onAddAction: () => setShowAddAction(true), onUpdateAction: updateAction, onDeleteAction: deleteAction, collaboratorsByAction: collaboratorsByAction })))), React.createElement("div", { style: { marginTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 } }, React.createElement("div", null, isSenior && (React.createElement("button", { onClick: deleteMeeting, style: {
+    })))))), React.createElement("div", null, !activeProject ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 48, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { fontSize: 14, marginBottom: 8 } }, "Select a project from the left to start capturing notes"), React.createElement("div", { style: { fontSize: 12 } }, "Notes auto-save as you type. Actions can be added at any time."))) : (React.createElement(ProjectCapturePane, { project: activeProject, entry: activeEntry, projectActions: projectActions, users: users, isReadOnly: isReadOnly, saveStatus: saveStatus[activeProject.id], meetingCfg: meetingCfg, latestNote: latestNotes ? latestNotes[activeProject.id] : null, keyDates: keyDates ? (keyDates[activeProject.id] || []) : [], isSenior: isSenior, currentUser: currentUser, isChair: isChair, handoffs: handoffs.filter(h => h.project_id === activeProject.id), resultingActions: resultingActions, onCreateHandoff: createHandoff, onAcknowledgeHandoff: acknowledgeHandoff, onConvertHandoff: convertHandoffToAction, meetingType: meeting.meeting_type, onKeyDatesChange: onKeyDatesChange, onUpdateField: (field, value) => updateEntryField(activeProject.id, field, value), onMarkReviewed: (field, val, fromDate) => markReviewedNoChange(activeProject.id, field, val, fromDate), onAddAction: () => setShowAddAction(true), onUpdateAction: updateAction, onDeleteAction: deleteAction, collaboratorsByAction: collaboratorsByAction, queriesByAction: openQueryByAction, onRaiseQuery: raiseQueryOnAction, onAnswerQuery: answerQueryOnAction })))), React.createElement("div", { style: { marginTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 } }, React.createElement("div", null, isSenior && (React.createElement("button", { onClick: deleteMeeting, style: {
             padding: '7px 14px', background: 'transparent',
             color: C.redStatus, border: `1px solid ${C.redStatus}`,
             borderRadius: 3, cursor: 'pointer', fontSize: 12,
             fontWeight: 600, fontFamily: "'DM Sans', system-ui, sans-serif",
             letterSpacing: '0.03em',
-        } }, "Delete meeting"))), React.createElement("div", { style: { display: 'flex', gap: 8 } }, !isReadOnly && (React.createElement(React.Fragment, null, React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "Generate round-up (", actions.length, ")"), React.createElement("button", { onClick: closeMeeting, style: btnPrimary() }, "End meeting"))), isReadOnly && (React.createElement(React.Fragment, null, isSenior && React.createElement("button", { onClick: reopenMeeting, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: C.amber, color: C.amber }) }, "Reopen meeting"), React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "View round-up (", actions.length, ")"))))), actions.length > 0 && (React.createElement("div", { style: { marginTop: 16, background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { background: C.prussian, padding: '10px 16px', borderBottom: `1px solid ${C.prussianDark}`, fontSize: 10, color: C.prussianMid, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "All actions in this meeting (", actions.length, ")"), React.createElement("div", null, actions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: projects, isReadOnly: isReadOnly, onUpdate: updateAction, onDelete: deleteAction, collaborators: collaboratorsByAction[a.id] || [], currentUser: currentUser })))))), (() => {
+        } }, "Delete meeting"))), React.createElement("div", { style: { display: 'flex', gap: 8 } }, !isReadOnly && (React.createElement(React.Fragment, null, React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "Generate round-up (", actions.length, ")"), React.createElement("button", { onClick: closeMeeting, style: btnPrimary() }, "End meeting"))), isReadOnly && (React.createElement(React.Fragment, null, isSenior && React.createElement("button", { onClick: reopenMeeting, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: C.amber, color: C.amber }) }, "Reopen meeting"), React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "View round-up (", actions.length, ")"))))), actions.length > 0 && (React.createElement("div", { style: { marginTop: 16, background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { background: C.prussian, padding: '10px 16px', borderBottom: `1px solid ${C.prussianDark}`, fontSize: 10, color: C.prussianMid, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "All actions in this meeting (", actions.length, ")"), React.createElement("div", null, actions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: projects, isReadOnly: isReadOnly, onUpdate: updateAction, onDelete: deleteAction, collaborators: collaboratorsByAction[a.id] || [], currentUser: currentUser, openQuery: openQueryByAction[a.id] || null, onRaiseQuery: raiseQueryOnAction, onAnswerQuery: answerQueryOnAction })))))), (() => {
         const raised = (handoffs || []).filter(h => h.from_meeting_id === meetingId);
         if (raised.length === 0)
             return null;
@@ -3378,7 +3651,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
 // ============================================================
 // PROJECT CAPTURE PANE (within MeetingDetailView)
 // ============================================================
-function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly, saveStatus, meetingCfg, latestNote, keyDates, isSenior, currentUser, isChair, handoffs, resultingActions, onCreateHandoff, onAcknowledgeHandoff, onConvertHandoff, meetingType, onKeyDatesChange, onUpdateField, onMarkReviewed, onAddAction, onUpdateAction, onDeleteAction, collaboratorsByAction }) {
+function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly, saveStatus, meetingCfg, latestNote, keyDates, isSenior, currentUser, isChair, handoffs, resultingActions, onCreateHandoff, onAcknowledgeHandoff, onConvertHandoff, meetingType, onKeyDatesChange, onUpdateField, onMarkReviewed, onAddAction, onUpdateAction, onDeleteAction, collaboratorsByAction, queriesByAction, onRaiseQuery, onAnswerQuery }) {
     const cfg = meetingCfg || MEETING_TYPES['pre-con'];
     const status = statusLookup[project.status] || { label: '—', bg: '#EEE', fg: C.muted };
     const [showOtherNotes, setShowOtherNotes] = useState(false);
@@ -3481,7 +3754,7 @@ function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly,
                 fontStyle: displayValue ? 'normal' : 'italic',
                 minHeight: 36, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
             } }, displayValue || 'No notes created yet')));
-    }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 28, paddingTop: 4 } }, React.createElement("div", { style: { height: 3, background: C.fog, borderRadius: 2, marginBottom: 20 } }), React.createElement("div", { style: { background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '14px 18px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: projectActions.length > 0 ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.prussian, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Actions (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '6px 12px' }) }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic', padding: '4px 0' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true, collaborators: (collaboratorsByAction && collaboratorsByAction[a.id]) || [], currentUser: currentUser })))))), React.createElement("div", { style: { padding: '14px 18px' } }, (() => {
+    }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 28, paddingTop: 4 } }, React.createElement("div", { style: { height: 3, background: C.fog, borderRadius: 2, marginBottom: 20 } }), React.createElement("div", { style: { background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '14px 18px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: projectActions.length > 0 ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.prussian, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Actions (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '6px 12px' }) }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic', padding: '4px 0' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true, collaborators: (collaboratorsByAction && collaboratorsByAction[a.id]) || [], currentUser: currentUser, openQuery: (queriesByAction && queriesByAction[a.id]) || null, onRaiseQuery: onRaiseQuery, onAnswerQuery: onAnswerQuery })))))), React.createElement("div", { style: { padding: '14px 18px' } }, (() => {
         const outgoing = (handoffs || []).filter(h => h.from_meeting_type === meetingType && h.to_department !== meetingType);
         return React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: (outgoing.length > 0 || showHandoffForm) ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.cord, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Flagged for other teams (", outgoing.length, ")"), !isReadOnly && !showHandoffForm && (React.createElement("button", { onClick: () => { setShowHandoffForm(true); setHandoffDept(''); setHandoffNote(''); }, style: { background: 'transparent', border: `1px solid ${C.cordMid}`, color: C.cord, borderRadius: 3, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", null, "\u2691"), "Flag for another team")));
     })(), showHandoffForm && (React.createElement("div", { style: { background: C.cordSoft, border: `1px solid ${C.cordMid}`, borderRadius: 4, padding: 14, marginBottom: 12 } }, React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 8 } }, "This surfaces as a callout when that team's meeting next opens this project. Their chair can acknowledge it or convert it to an action."), React.createElement("div", { style: { marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4, fontWeight: 600 } }, "Which team?"), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, MEETING_TYPE_OPTIONS.filter(o => o.value !== meetingType).map(o => (React.createElement("button", { key: o.value, onClick: () => setHandoffDept(o.value), style: { padding: '5px 10px', fontSize: 11, fontWeight: 600, borderRadius: 3, cursor: 'pointer', border: `1px solid ${handoffDept === o.value ? C.cord : C.line}`, background: handoffDept === o.value ? C.cord : C.white, color: handoffDept === o.value ? '#fff' : C.text, fontFamily: "'DM Sans', system-ui, sans-serif" } }, o.label.replace(' Meeting', '')))))), React.createElement("textarea", { value: handoffNote, onChange: e => setHandoffNote(e.target.value), placeholder: "What does that team need to know or do?", rows: 3, style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', resize: 'vertical', marginBottom: 8 }) }), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("button", { onClick: () => { if (handoffDept && handoffNote.trim()) {
@@ -3559,14 +3832,36 @@ function CapturePaneSaveIndicator({ status }) {
 // ============================================================
 // ACTION ROW (used in capture pane + register)
 // ============================================================
-function ActionRow({ action, users, projects, isReadOnly, onUpdate, onDelete, compact, collaborators, currentUser }) {
+function ActionRow({ action, users, projects, isReadOnly, onUpdate, onDelete, compact, collaborators, currentUser, openQuery, onRaiseQuery, onAnswerQuery }) {
     const owner = action.owner_user_id ? users.find(u => u.id === action.owner_user_id) : null;
     const ownerLabel = owner ? owner.display_name : (action.owner_name_fallback || 'Unassigned');
     const collabList = Array.isArray(collaborators) ? collaborators : [];
     const project = action.project_id ? projects.find(p => p.id === action.project_id) : null;
     const [showCloseForm, setShowCloseForm] = useState(false);
     const [closeNote, setCloseNote] = useState('');
+    const [showRaiseQuery, setShowRaiseQuery] = useState(false);
+    const [showAnswerQuery, setShowAnswerQuery] = useState(false);
+    const [answerText, setAnswerText] = useState('');
     const isClosed = action.status === 'closed';
+    // Query overlay: a query is independent of the action's status. Anyone
+    // with visibility can raise one (routed to a target); the action owner or
+    // the routed target resolves it.
+    const qNameOf = (id) => { const u = (users || []).find(x => x.id === id); return u ? u.display_name : 'someone'; };
+    const isQueryTarget = openQuery && currentUser && openQuery.target_user_id === currentUser.id;
+    const isQueryRaiser = openQuery && currentUser && openQuery.raised_by === currentUser.id;
+    const isActionOwnerOrUnknown = !currentUser || !action.owner_user_id || action.owner_user_id === currentUser.id;
+    const canAnswerQuery = !!openQuery && typeof onAnswerQuery === 'function' && (isQueryTarget || isActionOwnerOrUnknown);
+    const canRaiseQuery = !openQuery && typeof onRaiseQuery === 'function' && !isClosed;
+    const submitAnswer = async () => {
+        if (!answerText.trim() || !openQuery)
+            return;
+        try {
+            await onAnswerQuery(openQuery, answerText.trim());
+            setShowAnswerQuery(false);
+            setAnswerText('');
+        }
+        catch (e) { /* onAnswerQuery alerts on failure */ }
+    };
     // Only the action's owner can close or reopen. Collaborators can see
     // and update progress (via Add/Edit elsewhere) but can't close.
     // If no current user is known (defensive), permission stays open so
@@ -3607,7 +3902,21 @@ function ActionRow({ action, users, projects, isReadOnly, onUpdate, onDelete, co
     })()))), !isReadOnly && (React.createElement("button", { onClick: () => onDelete(action.id), style: { background: 'transparent', border: 'none', color: C.mist, cursor: 'pointer', fontSize: 15, padding: '0 2px', lineHeight: 1, flexShrink: 0, marginTop: 1 }, title: "Delete action", onMouseEnter: e => e.currentTarget.style.color = C.redStatus, onMouseLeave: e => e.currentTarget.style.color = C.mist }, "\u00D7"))), showCloseForm && (React.createElement("div", { style: { marginTop: 8, background: C.greenLight, border: `1px solid ${C.green}`, borderRadius: 3, padding: 10 } }, React.createElement("div", { style: { fontSize: 10, color: C.green, fontWeight: 700, marginBottom: 6 } }, "Close-out note required \u00B7 ", new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("input", { value: closeNote, onChange: e => setCloseNote(e.target.value), placeholder: "What was done?", style: Object.assign(Object.assign({}, inputStyle()), { flex: 1, fontSize: 12 }), autoFocus: true, onKeyDown: e => {
             if (e.key === 'Enter' && closeNote.trim())
                 handleConfirmClose();
-        } }), React.createElement("button", { onClick: handleConfirmClose, disabled: !closeNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: closeNote.trim() ? 1 : 0.4 }) }, "Done"), React.createElement("button", { onClick: () => { setShowCloseForm(false); setCloseNote(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel"))))));
+        } }), React.createElement("button", { onClick: handleConfirmClose, disabled: !closeNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: closeNote.trim() ? 1 : 0.4 }) }, "Done"), React.createElement("button", { onClick: () => { setShowCloseForm(false); setCloseNote(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (openQuery || canRaiseQuery) && React.createElement("div", { style: { marginTop: 8, padding: '8px 10px', borderRadius: 3, background: openQuery ? (isQueryTarget ? '#FFF6E6' : C.cordSoft) : C.bg, border: `1px solid ${openQuery ? (isQueryTarget ? C.amber : C.cordMid) : C.line}` } }, openQuery
+        ? React.createElement(React.Fragment, null,
+            React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap', marginBottom: 3 } },
+                React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: isQueryTarget ? C.amber : C.cord, flexShrink: 0 } }, "\u2753 Query"),
+                React.createElement("span", { style: { fontSize: 12, color: C.text, fontWeight: 600 } }, openQuery.query_text)),
+            React.createElement("div", { style: { fontSize: 10, color: C.muted } }, qNameOf(openQuery.raised_by), " \u2192 ", qNameOf(openQuery.target_user_id), " \u00B7 ", formatRelative(openQuery.raised_at), isQueryRaiser ? " \u00B7 raised by you" : ""),
+            canAnswerQuery && (!showAnswerQuery
+                ? React.createElement("button", { onClick: () => setShowAnswerQuery(true), style: { marginTop: 6, background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: C.amber, padding: 0, textDecoration: 'underline', fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Answer this query")
+                : React.createElement("div", { style: { display: 'flex', gap: 6, marginTop: 6 } },
+                    React.createElement("input", { value: answerText, onChange: e => setAnswerText(e.target.value), placeholder: "Your answer\u2026", autoFocus: true, style: Object.assign(Object.assign({}, inputStyle()), { flex: 1, fontSize: 12 }), onKeyDown: e => { if (e.key === 'Enter' && answerText.trim()) submitAnswer(); } }),
+                    React.createElement("button", { onClick: submitAnswer, disabled: !answerText.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: answerText.trim() ? 1 : 0.4 }) }, "Send"),
+                    React.createElement("button", { onClick: () => { setShowAnswerQuery(false); setAnswerText(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel"))))
+        : (!showRaiseQuery
+            ? React.createElement("button", { onClick: () => setShowRaiseQuery(true), style: { background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600, color: C.cord, padding: 0, textDecoration: 'underline', fontFamily: "'DM Sans', system-ui, sans-serif" } }, "\u2753 Raise a query")
+            : React.createElement(RaiseQueryForm, { users: users, currentUser: currentUser, onSubmit: async (text, targetId) => { await onRaiseQuery(action, text, targetId); setShowRaiseQuery(false); }, onCancel: () => setShowRaiseQuery(false) })))));
 }
 // ============================================================
 // ADD ACTION MODAL
