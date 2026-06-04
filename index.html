@@ -870,9 +870,10 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('active');
     const [ownerFilter, setOwnerFilter] = useState('');
-    // View state — controls top-level view: 'tracker' | 'meetings' | 'meeting-detail' | 'my-actions' | 'live-tracker'
+    // View state — controls top-level view: 'tracker' | 'meetings' | 'meeting-detail' | 'my-actions' | 'live-tracker' | 'project-dashboard'
     const [currentView, setCurrentView] = useState('tracker');
     const [currentMeetingId, setCurrentMeetingId] = useState(null);
+    const [currentProjectId, setCurrentProjectId] = useState(null);
     // Save tracking — keyed by project id
     const [saveStatus, setSaveStatus] = useState({});
     const isSenior = profile.role === 'senior';
@@ -1141,6 +1142,71 @@ function Dashboard({ user, profile, onProfileUpdated }) {
         }
     }, [buildMeetingEntrySummary]);
     // Refresh data whenever the user switches tabs
+    // Hash routing: keep URL ↔ view+id state in sync so the browser back
+    // button works and dashboards are deep-linkable.
+    // Patterns:
+    //   #/projects                 → tracker
+    //   #/projects/<uuid>          → project-dashboard for that project
+    //   #/meetings                 → meetings list
+    //   #/meetings/<uuid>          → meeting-detail
+    //   #/actions                  → my-actions
+    //   #/tracker                  → live-tracker
+    const parseHash = () => {
+        const h = (window.location.hash || '').replace(/^#\/?/, '');
+        const parts = h.split('/').filter(Boolean);
+        if (parts.length === 0)
+            return { view: 'tracker', meetingId: null, projectId: null };
+        const [seg, id] = parts;
+        if (seg === 'projects' && id)
+            return { view: 'project-dashboard', meetingId: null, projectId: id };
+        if (seg === 'projects')
+            return { view: 'tracker', meetingId: null, projectId: null };
+        if (seg === 'meetings' && id)
+            return { view: 'meeting-detail', meetingId: id, projectId: null };
+        if (seg === 'meetings')
+            return { view: 'meetings', meetingId: null, projectId: null };
+        if (seg === 'actions')
+            return { view: 'my-actions', meetingId: null, projectId: null };
+        if (seg === 'tracker')
+            return { view: 'live-tracker', meetingId: null, projectId: null };
+        return { view: 'tracker', meetingId: null, projectId: null };
+    };
+    const writeHash = (view, meetingId, projectId) => {
+        let h = '#/projects';
+        if (view === 'tracker')
+            h = '#/projects';
+        else if (view === 'project-dashboard' && projectId)
+            h = `#/projects/${projectId}`;
+        else if (view === 'meetings')
+            h = '#/meetings';
+        else if (view === 'meeting-detail' && meetingId)
+            h = `#/meetings/${meetingId}`;
+        else if (view === 'my-actions')
+            h = '#/actions';
+        else if (view === 'live-tracker')
+            h = '#/tracker';
+        if (window.location.hash !== h)
+            window.location.hash = h;
+    };
+    // On mount: read hash → set state.
+    useEffect(() => {
+        const { view, meetingId, projectId } = parseHash();
+        setCurrentView(view);
+        setCurrentMeetingId(meetingId);
+        setCurrentProjectId(projectId);
+        const onHash = () => {
+            const next = parseHash();
+            setCurrentView(next.view);
+            setCurrentMeetingId(next.meetingId);
+            setCurrentProjectId(next.projectId);
+        };
+        window.addEventListener('hashchange', onHash);
+        return () => window.removeEventListener('hashchange', onHash);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // On state change: write hash → URL stays consistent.
+    useEffect(() => {
+        writeHash(currentView, currentMeetingId, currentProjectId);
+    }, [currentView, currentMeetingId, currentProjectId]);
     // This ensures meetings list, notes, and actions are always current
     // regardless of what happened in previous views
     useEffect(() => {
@@ -1215,7 +1281,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     if (error) {
         return (React.createElement("div", { style: { minHeight: '100vh', background: C.bg, padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 6, maxWidth: 600, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load: ", error), React.createElement("button", { onClick: signOut, style: Object.assign(Object.assign({}, btnSecondary()), { marginTop: 16 }) }, "Sign out and retry")));
     }
-    return (React.createElement("div", { style: { minHeight: '100vh', background: '#F4F3F1', color: C.text } }, React.createElement("header", { style: { background: C.grip, borderBottom: `2px solid ${C.gripBorder}`, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 52 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', alignItems: 'center', lineHeight: 1, gap: 6 } }, React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "["), React.createElement("span", null, "bixframe"), React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "]")), React.createElement("nav", { style: { display: 'flex', gap: 2 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }, onMouseEnter: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)', onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.cordBright, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.cordBright, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: 'rgba(232,234,232,0.85)' } }, profile.display_name), React.createElement("span", { style: { fontSize: 10, color: 'rgba(232,234,232,0.4)' } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, style: { padding: '5px 12px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(232,234,232,0.5)', fontFamily: 'inherit', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 3, cursor: 'pointer' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } }))));
+    return (React.createElement("div", { style: { minHeight: '100vh', background: '#F4F3F1', color: C.text } }, React.createElement("header", { style: { background: C.grip, borderBottom: `2px solid ${C.gripBorder}`, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 52 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', alignItems: 'center', lineHeight: 1, gap: 6 } }, React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "["), React.createElement("span", null, "bixframe"), React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "]")), React.createElement("nav", { style: { display: 'flex', gap: 2 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }, onMouseEnter: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)', onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.cordBright, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.cordBright, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: 'rgba(232,234,232,0.85)' } }, profile.display_name), React.createElement("span", { style: { fontSize: 10, color: 'rgba(232,234,232,0.4)' } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, style: { padding: '5px 12px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(232,234,232,0.5)', fontFamily: 'inherit', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 3, cursor: 'pointer' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } }))));
 }
 // ============================================================
 // KEY DATE URGENCY — colour logic based on days remaining
@@ -1320,7 +1386,7 @@ function ViewTab({ label, active, onClick }) {
 // ============================================================
 // TRACKER VIEW — extracted from old Dashboard render
 // ============================================================
-function TrackerView({ projects, filteredProjects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting, updateProjectField, saveStatus, search, setSearch, statusFilter, setStatusFilter, ownerFilter, setOwnerFilter, statusCounts, distinctOwners, onNewProject }) {
+function TrackerView({ projects, filteredProjects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting, onOpenProjectDashboard, updateProjectField, saveStatus, search, setSearch, statusFilter, setStatusFilter, ownerFilter, setOwnerFilter, statusCounts, distinctOwners, onNewProject }) {
     const hiddenCount = (statusCounts.lost || 0) + (statusCounts['handed-over'] || 0);
     return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.grip, padding: '12px 32px', borderBottom: '2px solid ' + C.cord } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' } }, React.createElement("span", { style: { fontSize: 9, color: 'rgba(255,255,255,0.5)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', marginRight: 8 } }, "Pipeline"), STATUSES.filter(s => !HIDDEN_STATUSES.includes(s.value)).map(s => {
         const active = statusFilter === s.value;
@@ -1346,19 +1412,20 @@ function TrackerView({ projects, filteredProjects, users, latestNotes, keyDates,
                 fontFamily: "'DM Sans', system-ui, sans-serif",
                 gap: 1, opacity: count === 0 ? 0.4 : 0.75,
             } }, React.createElement("span", { style: { fontSize: 15, fontWeight: 700, lineHeight: 1, color: active ? C.red : s.fg } }, count), React.createElement("span", { style: { fontSize: 7, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: active ? C.red : s.fg, opacity: 0.8 } }, s.short)));
-    }))), React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '10px 32px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', gap: 10, alignItems: 'center' } }, React.createElement("input", { type: "search", placeholder: "Search project, number, address\u2026", value: search, onChange: (e) => setSearch(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 260, flex: '0 0 260px' }) }), React.createElement("select", { value: statusFilter, onChange: (e) => setStatusFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 170 }) }, React.createElement("option", { value: "active" }, "All active"), React.createElement("option", { value: "all" }, "All statuses (incl. hidden)"), STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label))), React.createElement("select", { value: ownerFilter, onChange: (e) => setOwnerFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 150 }) }, React.createElement("option", { value: "" }, "All owners"), distinctOwners.map(o => React.createElement("option", { key: o.id, value: o.id }, o.initials, " \u00B7 ", o.name))), React.createElement("span", { style: { fontSize: 11, color: C.muted } }, filteredProjects.length, " project", filteredProjects.length === 1 ? '' : 's'), isSenior && (React.createElement("button", { onClick: onNewProject, style: Object.assign(Object.assign({}, btnPrimary()), { marginLeft: 'auto' }) }, "+ New project")))), React.createElement("div", { style: { position: 'sticky', top: 54, zIndex: 8, background: '#F7F5F5', padding: '6px 32px 0' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex' } }, React.createElement("div", { style: { width: 220, flexShrink: 0, paddingLeft: 4, paddingBottom: 4, borderBottom: `2px solid ${C.red}` } }, React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: C.red, fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Project information")), React.createElement("div", { style: { flex: 1, paddingLeft: 18, paddingBottom: 4, borderBottom: `2px solid ${C.line}` } }, React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: C.muted, fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Headlines")))), React.createElement("main", { style: { padding: '12px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto' } }, filteredProjects.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 48, textAlign: 'center', color: C.muted } }, projects.length === 0 ? 'No projects yet. Click "+ New project" to start.' : 'No projects match the current filters.')) : (React.createElement(MasterResourceTracker, { projects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, updateProjectField: updateProjectField, saveStatus: saveStatus }))))));
+    }))), React.createElement("div", { style: { background: C.white, borderBottom: `1px solid ${C.line}`, padding: '10px 32px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', gap: 10, alignItems: 'center' } }, React.createElement("input", { type: "search", placeholder: "Search project, number, address\u2026", value: search, onChange: (e) => setSearch(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 260, flex: '0 0 260px' }) }), React.createElement("select", { value: statusFilter, onChange: (e) => setStatusFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 170 }) }, React.createElement("option", { value: "active" }, "All active"), React.createElement("option", { value: "all" }, "All statuses (incl. hidden)"), STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label))), React.createElement("select", { value: ownerFilter, onChange: (e) => setOwnerFilter(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: 150 }) }, React.createElement("option", { value: "" }, "All owners"), distinctOwners.map(o => React.createElement("option", { key: o.id, value: o.id }, o.initials, " \u00B7 ", o.name))), React.createElement("span", { style: { fontSize: 11, color: C.muted } }, filteredProjects.length, " project", filteredProjects.length === 1 ? '' : 's'), isSenior && (React.createElement("button", { onClick: onNewProject, style: Object.assign(Object.assign({}, btnPrimary()), { marginLeft: 'auto' }) }, "+ New project")))), React.createElement("div", { style: { position: 'sticky', top: 54, zIndex: 8, background: '#F7F5F5', padding: '6px 32px 0' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex' } }, React.createElement("div", { style: { width: 220, flexShrink: 0, paddingLeft: 4, paddingBottom: 4, borderBottom: `2px solid ${C.red}` } }, React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: C.red, fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Project information")), React.createElement("div", { style: { flex: 1, paddingLeft: 18, paddingBottom: 4, borderBottom: `2px solid ${C.line}` } }, React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: C.muted, fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Headlines")))), React.createElement("main", { style: { padding: '12px 32px 80px' } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto' } }, filteredProjects.length === 0 ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 48, textAlign: 'center', color: C.muted } }, projects.length === 0 ? 'No projects yet. Click "+ New project" to start.' : 'No projects match the current filters.')) : (React.createElement(MasterResourceTracker, { projects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, onOpenProjectDashboard: onOpenProjectDashboard, updateProjectField: updateProjectField, saveStatus: saveStatus }))))));
 }
 // ============================================================
 // MASTER RESOURCE TRACKER (the table)
 // ============================================================
-function MasterResourceTracker({ projects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, updateProjectField, saveStatus, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting }) {
-    return (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 12 } }, projects.map(project => (React.createElement(ProjectRow, { key: project.id, project: project, users: users, latestNote: latestNotes[project.id], keyDates: keyDates[project.id] || [], projectActions: projectActions.filter(a => a.project_id === project.id), projectFlags: (projectFlags || []).filter(f => f.project_id === project.id), isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, updateField: (field, value) => updateProjectField(project.id, field, value), saveStatus: saveStatus[project.id] })))));
+function MasterResourceTracker({ projects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, updateProjectField, saveStatus, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting, onOpenProjectDashboard }) {
+    return (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 12 } }, projects.map(project => (React.createElement(ProjectRow, { key: project.id, project: project, users: users, latestNote: latestNotes[project.id], keyDates: keyDates[project.id] || [], projectActions: projectActions.filter(a => a.project_id === project.id), projectFlags: (projectFlags || []).filter(f => f.project_id === project.id), isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, onOpenProjectDashboard: onOpenProjectDashboard, updateField: (field, value) => updateProjectField(project.id, field, value), saveStatus: saveStatus[project.id] })))));
 }
 // ============================================================
 // PROJECT ROW — two visual rows per project
 // ============================================================
-function ProjectRow({ project, users, latestNote, keyDates, projectActions, projectFlags, isSenior, currentUser, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting, updateField, saveStatus }) {
+function ProjectRow({ project, users, latestNote, keyDates, projectActions, projectFlags, isSenior, currentUser, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting, onOpenProjectDashboard, updateField, saveStatus }) {
     const lastUpdater = users.find(u => u.id === project.last_updated_by);
+    const [darkHover, setDarkHover] = React.useState(false);
     const addedDate = project.created_at ? formatMeetingDate(project.created_at.slice(0, 10)) : null;
     const status = statusLookup[project.status];
     const userById = {};
@@ -1372,7 +1439,9 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
         { label: 'PM', user: resolveTeamMember(project.project_manager_user_id), field: 'project_manager_user_id' },
         { label: 'Furn', user: resolveTeamMember(project.furniture_consultant_user_id), field: 'furniture_consultant_user_id' },
     ];
-    return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '220px 1fr', borderRadius: 5, overflow: 'hidden', border: `1px solid ${C.line}` } }, React.createElement("div", { style: { background: C.grip, padding: '16px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' } }, React.createElement("div", { style: { position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(93,191,176,0.16) 1.3px, transparent 1.3px)', backgroundSize: '10px 10px', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', pointerEvents: 'none' } }), React.createElement("div", { style: { position: 'relative', zIndex: 1 } }, React.createElement("textarea", { defaultValue: project.name || '', onBlur: (e) => {
+    return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '220px 1fr', borderRadius: 5, overflow: 'hidden', border: `1px solid ${C.line}` } }, React.createElement("div", { onMouseEnter: () => setDarkHover(true), onMouseLeave: () => setDarkHover(false), style: { background: C.grip, padding: '16px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden', transition: 'box-shadow 0.18s ease, outline 0.18s ease', outline: darkHover ? `2px solid ${C.cordBright}` : '2px solid transparent', outlineOffset: '-2px', boxShadow: darkHover ? 'inset 0 0 0 9999px rgba(93,191,176,0.06)' : 'none' } }, React.createElement("div", { style: { position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(93,191,176,0.16) 1.3px, transparent 1.3px)', backgroundSize: '10px 10px', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', pointerEvents: 'none' } }), 
+    // Expand-to-dashboard icon, top-right of dark panel.
+    onOpenProjectDashboard && React.createElement("button", { onClick: () => onOpenProjectDashboard(project.id), title: "Open project dashboard", style: { position: 'absolute', top: 8, right: 8, zIndex: 2, background: darkHover ? 'rgba(93,191,176,0.18)' : 'transparent', border: `1px solid ${darkHover ? C.cordBright : 'rgba(255,255,255,0.12)'}`, borderRadius: 3, padding: '4px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', transition: 'all 0.15s ease' } }, React.createElement("svg", { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("path", { d: "M14 4h6v6M20 4l-9 9M10 20H4v-6M4 20l9-9", stroke: C.cordBright, strokeWidth: 2.4, strokeLinecap: "round", strokeLinejoin: "round" })), darkHover && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.cordBright } }, "Open")), React.createElement("div", { style: { position: 'relative', zIndex: 1 } }, React.createElement("textarea", { defaultValue: project.name || '', onBlur: (e) => {
             if (e.target.value !== project.name)
                 updateField('name', e.target.value);
         }, placeholder: "Project name", rows: 2, style: {
@@ -1874,24 +1943,174 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
         } }), React.createElement("button", { onClick: handleConfirmClose, disabled: !closeNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { background: C.green, fontSize: 11, opacity: closeNote.trim() ? 1 : 0.4 }) }, "Done"), React.createElement("button", { onClick: () => { setShowCloseForm(false); setCloseNote(''); }, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel"))))));
 }
 // ============================================================
+// USER PICKER FIELD — reusable single-user dropdown
+// Used by NewProjectModal and the project Team tab.
+// Filtering: soft. Matching department surfaces at the top,
+// rest available below a divider. Inactive users hidden from
+// selection but a pre-existing assignment shows with "(inactive)".
+// ============================================================
+function UserPickerField({ users, value, onChange, label, department, required, allowClear }) {
+    const [open, setOpen] = React.useState(false);
+    const wrapRef = React.useRef(null);
+    React.useEffect(() => {
+        if (!open)
+            return;
+        const onDown = (e) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target))
+                setOpen(false);
+        };
+        window.addEventListener('mousedown', onDown);
+        return () => window.removeEventListener('mousedown', onDown);
+    }, [open]);
+    const active = (users || []).filter(u => u.active !== false);
+    const selected = value ? (users || []).find(u => u.id === value) : null;
+    const selectedInactive = selected && selected.active === false;
+    // Group active users into matching department + others
+    const matching = department ? active.filter(u => u.department === department) : [];
+    const matchingIds = new Set(matching.map(u => u.id));
+    const others = active.filter(u => !matchingIds.has(u.id));
+    const byName = (a, b) => (a.display_name || '').localeCompare(b.display_name || '');
+    matching.sort(byName);
+    others.sort(byName);
+    const renderUser = (u) => React.createElement("button", {
+        key: u.id,
+        onClick: () => { onChange(u.id); setOpen(false); },
+        style: {
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            width: '100%', textAlign: 'left', padding: '8px 12px',
+            background: u.id === value ? C.cordSoft : 'transparent',
+            border: 'none', borderBottom: `1px solid ${C.line}`,
+            cursor: 'pointer', fontSize: 13, color: C.text,
+            fontFamily: "'DM Sans', system-ui, sans-serif"
+        },
+        onMouseEnter: e => { if (u.id !== value)
+            e.currentTarget.style.background = C.bg; },
+        onMouseLeave: e => { if (u.id !== value)
+            e.currentTarget.style.background = 'transparent'; }
+    }, React.createElement("span", null, React.createElement("strong", { style: { color: C.cord, marginRight: 6, fontWeight: 700 } }, u.initials || '—'), u.display_name), u.department && React.createElement("span", { style: { fontSize: 10, fontWeight: 600, color: C.cord, background: C.cordSoft, padding: '1px 7px', borderRadius: 8 } }, (MEETING_TYPES[u.department] || { short: u.department }).short));
+    const trigger = selected
+        ? React.createElement("span", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement("strong", { style: { color: C.cord, fontWeight: 700 } }, selected.initials || '—'), React.createElement("span", { style: { color: C.text } }, selected.display_name), selectedInactive && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: C.amber, background: C.amberLight, padding: '1px 6px', borderRadius: 8, textTransform: 'uppercase', letterSpacing: '0.06em' } }, "Inactive"))
+        : React.createElement("span", { style: { color: C.mist, fontStyle: 'italic' } }, required ? "Select someone…" : "— None —");
+    return React.createElement("div", { ref: wrapRef, style: { position: 'relative' } }, React.createElement("button", { onClick: () => setOpen(o => !o), type: "button", style: {
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
+            padding: '8px 12px', background: C.white,
+            border: `1px solid ${open ? C.cord : C.line}`,
+            borderRadius: 4, cursor: 'pointer', fontSize: 13,
+            fontFamily: "'DM Sans', system-ui, sans-serif", textAlign: 'left',
+        } }, trigger, React.createElement("span", { style: { color: C.mist, fontSize: 10, transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' } }, "\u25BC")), open && React.createElement("div", { style: {
+            position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+            background: C.white, border: `1px solid ${C.line}`, borderRadius: 4,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100,
+            maxHeight: 320, overflowY: 'auto'
+        } }, allowClear && value && React.createElement("button", { onClick: () => { onChange(null); setOpen(false); }, style: { display: 'block', width: '100%', textAlign: 'left', padding: '7px 12px', background: 'transparent', border: 'none', borderBottom: `1px solid ${C.line}`, cursor: 'pointer', fontSize: 12, color: C.mist, fontStyle: 'italic', fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Clear selection"), matching.length > 0 && React.createElement(React.Fragment, null, React.createElement("div", { style: { padding: '6px 12px', background: C.cordSoft, fontSize: 9, fontWeight: 700, color: C.cord, textTransform: 'uppercase', letterSpacing: '0.08em' } }, (MEETING_TYPES[department] || { short: department || 'Matching' }).short, " department"), matching.map(renderUser)), others.length > 0 && React.createElement(React.Fragment, null, React.createElement("div", { style: { padding: '6px 12px', background: C.bg, fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' } }, matching.length > 0 ? "Others" : "All users"), others.map(renderUser)), active.length === 0 && React.createElement("div", { style: { padding: 14, fontSize: 12, color: C.muted, fontStyle: 'italic', textAlign: 'center' } }, "No active users to pick from.")));
+}
+// ============================================================
+// PROJECT DASHBOARD VIEW
+// Drill-in surface from the home projects page. Tabs structure
+// laid down for future modules; this build ships the Team tab.
+// All non-Team areas are read-only.
+// ============================================================
+function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, onSaveTeam, onBack }) {
+    const project = (projects || []).find(p => p.id === projectId);
+    const [activeTab, setActiveTab] = React.useState('team');
+    const [saving, setSaving] = React.useState(null); // role currently saving
+    if (!project) {
+        return React.createElement("div", { style: { padding: 40, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { marginBottom: 12 } }, "Project not found."), React.createElement("button", { onClick: onBack, style: btnSecondary() }, "\u2190 Back to projects"));
+    }
+    const status = statusLookup[project.status] || { label: project.status || '—', bg: '#EEE', fg: C.muted };
+    // Live metrics from shared state
+    const myActions = (projectActions || []).filter(a => a.project_id === projectId);
+    const myFlags = (projectFlags || []).filter(f => f.project_id === projectId);
+    const myKeyDates = (keyDates && keyDates[projectId]) || [];
+    const openKeyDates = myKeyDates.filter(kd => !isAutoComplete(kd));
+    const lastUpdater = users.find(u => u.id === project.last_updated_by);
+    const lastUpdated = project.updated_at ? formatRelative(project.updated_at) : '—';
+    // Team rows config
+    const TEAM_ROWS = [
+        { label: 'Owner', field: 'owner_user_id', department: null },
+        { label: 'Pre-Con Lead', field: 'pre_con_lead_user_id', department: 'pre-con' },
+        { label: 'Designer', field: 'designer_user_id', department: 'design' },
+        { label: 'Technical Designer', field: 'technical_designer_user_id', department: 'technical' },
+        { label: 'Furniture Consultant', field: 'furniture_consultant_user_id', department: 'furniture' },
+        { label: 'Project Manager', field: 'project_manager_user_id', department: 'pm' },
+    ];
+    const handleTeamChange = async (field, newUserId) => {
+        setSaving(field);
+        try {
+            await onSaveTeam(projectId, field, newUserId);
+        }
+        finally {
+            setSaving(null);
+        }
+    };
+    // Read-only info rows
+    const infoRows = [
+        { label: 'Project Name', value: project.name || '—' },
+        { label: 'Project Number', value: project.project_number || '—' },
+        { label: 'Address', value: project.address || '—' },
+        { label: 'Status', value: status.label, isStatus: true, statusBg: status.bg, statusFg: status.fg },
+    ];
+    // Planned-module placeholders
+    const PLANNED_MODULES = ['Building Regs', 'Adjudication', 'Risk Register', 'Long Lead Items', 'RFI Schedule', 'Budget Movement', 'Close Out', 'Lessons Learned'];
+    const TABS = [
+        { value: 'team', label: 'Team', available: true },
+    ];
+    return React.createElement("div", { style: { background: C.bg, minHeight: 'calc(100vh - 54px)' } }, 
+    // Dark header
+    React.createElement("div", { style: { background: C.grip, padding: '18px 32px', borderBottom: `2px solid ${C.cord}` } }, React.createElement("div", { style: { maxWidth: 1280, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' } }, React.createElement("button", { onClick: onBack, style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.18)', color: 'rgba(232,234,232,0.85)', padding: '6px 12px', borderRadius: 3, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'uppercase', letterSpacing: '0.08em' }, onMouseEnter: e => e.currentTarget.style.borderColor = C.cordBright, onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)' }, "\u2190 All projects"), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.cordBright, textTransform: 'uppercase', letterSpacing: '0.14em' } }, "Project Dashboard"), React.createElement("div", { style: { fontSize: 18, fontWeight: 600, color: C.white, fontFamily: "'DM Sans', system-ui, sans-serif", marginTop: 2 } }, project.name || 'Untitled project', project.project_number && React.createElement("span", { style: { fontFamily: "'DM Mono', monospace", fontSize: 13, color: 'rgba(232,234,232,0.55)', fontWeight: 400, marginLeft: 8 } }, "#", project.project_number))), React.createElement("span", { style: { background: status.bg, color: status.fg, padding: '5px 14px', borderRadius: 3, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' } }, status.label))), 
+    // Main content
+    React.createElement("div", { style: { maxWidth: 1280, margin: '0 auto', padding: '24px 32px' } }, 
+    // Metric tiles row
+    React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 } }, renderMetricTile('Open Actions', myActions.length, myActions.length > 0 ? C.amber : C.muted), renderMetricTile('Open Flags', myFlags.length, myFlags.length > 0 ? C.cord : C.muted), renderMetricTile('Open Key Dates', openKeyDates.length, openKeyDates.length > 0 ? C.green : C.muted), renderMetricTile('Last Updated', lastUpdated, C.text, lastUpdater ? `by ${lastUpdater.display_name}` : null)), 
+    // Planned tiles row
+    React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 28 } }, ['Site Area', 'Open Risks', 'Open RFIs', 'Long Lead'].map(label => React.createElement("div", { key: label, style: { background: C.white, border: `1px dashed ${C.line}`, borderRadius: 4, padding: '14px 16px', opacity: 0.7 } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, color: C.mist, textTransform: 'uppercase', letterSpacing: '0.1em' } }, label), React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: C.mist, marginTop: 6 } }, "\u2014"), React.createElement("div", { style: { fontSize: 9, color: C.mist, marginTop: 4, fontStyle: 'italic' } }, "Planned")))), 
+    // Tab strip
+    React.createElement("div", { style: { display: 'flex', borderBottom: `2px solid ${C.line}`, marginBottom: 0 } }, TABS.map(t => React.createElement("button", { key: t.value, onClick: () => t.available && setActiveTab(t.value), style: {
+            background: 'transparent', border: 'none', padding: '12px 20px',
+            cursor: t.available ? 'pointer' : 'default',
+            fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 12, fontWeight: 700,
+            color: activeTab === t.value ? C.cord : (t.available ? C.muted : C.mist),
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+            borderBottom: activeTab === t.value ? `2px solid ${C.cord}` : '2px solid transparent',
+            marginBottom: -2,
+        } }, t.label))), 
+    // Tab content
+    activeTab === 'team' && React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderTop: 'none', padding: '24px 28px' } }, React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 28 } }, 
+    // Project Information panel (read-only)
+    React.createElement("div", null, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.red, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12, paddingBottom: 8, borderBottom: `2px solid ${C.red}` } }, "Project Information"), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, infoRows.map(r => React.createElement("div", { key: r.label, style: { display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'center', gap: 12 } }, React.createElement("div", { style: { fontSize: 11, color: C.muted, fontWeight: 500 } }, r.label), r.isStatus
+        ? React.createElement("span", { style: { display: 'inline-block', padding: '3px 10px', borderRadius: 3, background: r.statusBg, color: r.statusFg, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em' } }, r.value)
+        : React.createElement("div", { style: { fontSize: 13, color: C.text, fontWeight: 500 } }, r.value)))), React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 16, fontStyle: 'italic' } }, "Edit project name, number, address and status from the home projects page.")), 
+    // Project Team panel (the only manipulable area)
+    React.createElement("div", null, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.red, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12, paddingBottom: 8, borderBottom: `2px solid ${C.red}` } }, "Project Team"), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, TEAM_ROWS.map(row => React.createElement("div", { key: row.field, style: { display: 'grid', gridTemplateColumns: '140px 1fr 20px', alignItems: 'center', gap: 12 } }, React.createElement("div", { style: { fontSize: 11, color: C.muted, fontWeight: 500 } }, row.label), React.createElement(UserPickerField, { users: users, value: project[row.field] || null, onChange: (newId) => handleTeamChange(row.field, newId), label: row.label, department: row.department, allowClear: row.field === 'owner_user_id' ? false : true, required: row.field === 'owner_user_id' }), saving === row.field
+        ? React.createElement("span", { style: { fontSize: 10, color: C.cord, fontWeight: 600 } }, "\u2026")
+        : React.createElement("span", null))))))), 
+    // Module Status placeholder block
+    React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '20px 24px', marginTop: 24 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.red, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14, paddingBottom: 8, borderBottom: `2px solid ${C.red}` } }, "Module Status"), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 } }, PLANNED_MODULES.map(m => React.createElement("div", { key: m, style: { padding: '12px 16px', border: `1px dashed ${C.line}`, borderRadius: 4, fontSize: 12, color: C.mist, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, React.createElement("span", null, m), React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.mist } }, "Planned")))))));
+}
+// Tiny helper for the live metric tiles
+function renderMetricTile(label, value, valueColour, sublabel) {
+    return React.createElement("div", { key: label, style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '14px 16px' } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.1em' } }, label), React.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: valueColour || C.text, marginTop: 6, lineHeight: 1 } }, value), sublabel && React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 4 } }, sublabel));
+}
+// ============================================================
 // NEW PROJECT MODAL
 // ============================================================
-function NewProjectModal({ onClose, onCreate }) {
+function NewProjectModal({ onClose, onCreate, users }) {
     const [form, setForm] = useState({
         name: '',
         project_number: '',
         address: '',
         status: 'lead',
-        owner_initials: '',
-        pre_con_lead_initials: '',
-        designer_initials: '',
-        technical_designer_initials: '',
-        project_manager_initials: '',
-        furniture_consultant_initials: '',
+        owner_user_id: null,
+        pre_con_lead_user_id: null,
+        designer_user_id: null,
+        technical_designer_user_id: null,
+        project_manager_user_id: null,
+        furniture_consultant_user_id: null,
     });
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const handle = (k) => (e) => setForm(f => (Object.assign(Object.assign({}, f), { [k]: e.target.value })));
+    const setUser = (k) => (newId) => setForm(f => (Object.assign(Object.assign({}, f), { [k]: newId })));
     const submit = async (e) => {
         e.preventDefault();
         if (!form.name.trim()) {
@@ -1912,7 +2131,7 @@ function NewProjectModal({ onClose, onCreate }) {
             setBusy(false);
         }
     };
-    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 560 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "New project"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Project name *" }, React.createElement("input", { value: form.name, onChange: handle('name'), required: true, style: inputStyle(), autoFocus: true })), React.createElement(Field, { label: "Project number *" }, React.createElement("input", { value: form.project_number, onChange: handle('project_number'), required: true, style: inputStyle(), placeholder: "e.g. 26342" })), React.createElement(Field, { label: "Address" }, React.createElement("input", { value: form.address, onChange: handle('address'), style: inputStyle(), placeholder: "e.g. 14 Wardour Street, London W1D 6QE" })), React.createElement(Field, { label: "Status" }, React.createElement("select", { value: form.status, onChange: handle('status'), style: inputStyle() }, STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label)))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Owner" }, React.createElement("input", { value: form.owner_initials, onChange: handle('owner_initials'), style: inputStyle(), placeholder: "TF", maxLength: 4 })), React.createElement(Field, { label: "Pre-Con" }, React.createElement("input", { value: form.pre_con_lead_initials, onChange: handle('pre_con_lead_initials'), style: inputStyle(), placeholder: "EK", maxLength: 4 })), React.createElement(Field, { label: "Designer" }, React.createElement("input", { value: form.designer_initials, onChange: handle('designer_initials'), style: inputStyle(), placeholder: "PH", maxLength: 4 }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Technical" }, React.createElement("input", { value: form.technical_designer_initials, onChange: handle('technical_designer_initials'), style: inputStyle(), placeholder: "TS", maxLength: 4 })), React.createElement(Field, { label: "PM" }, React.createElement("input", { value: form.project_manager_initials, onChange: handle('project_manager_initials'), style: inputStyle(), placeholder: "NL", maxLength: 4 })), React.createElement(Field, { label: "Furniture" }, React.createElement("input", { value: form.furniture_consultant_initials, onChange: handle('furniture_consultant_initials'), style: inputStyle(), placeholder: "HB", maxLength: 4 }))), error && React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 10, borderRadius: 4, fontSize: 13, marginBottom: 14, borderLeft: `3px solid ${C.redStatus}` } }, error), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Creating…' : 'Create project'))))));
+    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 560 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "New project"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Project name *" }, React.createElement("input", { value: form.name, onChange: handle('name'), required: true, style: inputStyle(), autoFocus: true })), React.createElement(Field, { label: "Project number *" }, React.createElement("input", { value: form.project_number, onChange: handle('project_number'), required: true, style: inputStyle(), placeholder: "e.g. 26342" })), React.createElement(Field, { label: "Address" }, React.createElement("input", { value: form.address, onChange: handle('address'), style: inputStyle(), placeholder: "e.g. 14 Wardour Street, London W1D 6QE" })), React.createElement(Field, { label: "Status" }, React.createElement("select", { value: form.status, onChange: handle('status'), style: inputStyle() }, STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label)))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Owner" }, React.createElement(UserPickerField, { users: users, value: form.owner_user_id, onChange: setUser('owner_user_id'), department: null, required: true, allowClear: false })), React.createElement(Field, { label: "Pre-Con Lead" }, React.createElement(UserPickerField, { users: users, value: form.pre_con_lead_user_id, onChange: setUser('pre_con_lead_user_id'), department: 'pre-con', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Designer" }, React.createElement(UserPickerField, { users: users, value: form.designer_user_id, onChange: setUser('designer_user_id'), department: 'design', allowClear: true })), React.createElement(Field, { label: "Technical Designer" }, React.createElement(UserPickerField, { users: users, value: form.technical_designer_user_id, onChange: setUser('technical_designer_user_id'), department: 'technical', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Project Manager" }, React.createElement(UserPickerField, { users: users, value: form.project_manager_user_id, onChange: setUser('project_manager_user_id'), department: 'pm', allowClear: true })), React.createElement(Field, { label: "Furniture Consultant" }, React.createElement(UserPickerField, { users: users, value: form.furniture_consultant_user_id, onChange: setUser('furniture_consultant_user_id'), department: 'furniture', allowClear: true }))), error && React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 10, borderRadius: 4, fontSize: 13, marginBottom: 14, borderLeft: `3px solid ${C.redStatus}` } }, error), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Creating…' : 'Create project'))))));
 }
 // ============================================================
 // PROFILE MODAL — edit display name & initials (and more for seniors)
