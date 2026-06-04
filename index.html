@@ -1722,16 +1722,36 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
         let mounted = true;
         (async () => {
             try {
-                // Fetch actions owned by this user
-                const { data: actionsData, error: actionsErr } = await sb
-                    .from('actions')
-                    .select('*')
-                    .eq('owner_user_id', currentUser.id)
-                    .order('created_at', { ascending: false });
-                if (actionsErr)
-                    throw actionsErr;
+                // Fetch actions owned by this user PLUS actions where this user
+                // is a collaborator (via action_assignees).
+                const [ownedRes, assigneeRes] = await Promise.all([
+                    sb.from('actions').select('*').eq('owner_user_id', currentUser.id),
+                    sb.from('action_assignees').select('action_id').eq('user_id', currentUser.id),
+                ]);
+                if (ownedRes.error)
+                    throw ownedRes.error;
+                // Collaborator rows tell us which other action IDs to fetch
+                const collabActionIds = ((assigneeRes && assigneeRes.data) || []).map(r => r.action_id);
+                const ownedIds = new Set((ownedRes.data || []).map(a => a.id));
+                const extraIds = collabActionIds.filter(id => !ownedIds.has(id));
+                let extraActions = [];
+                if (extraIds.length > 0) {
+                    const { data: extraData, error: extraErr } = await sb
+                        .from('actions')
+                        .select('*')
+                        .in('id', extraIds);
+                    if (extraErr)
+                        throw extraErr;
+                    extraActions = extraData || [];
+                }
+                // Mark each action's relationship to the current user so the UI
+                // can distinguish "you own this" from "you collaborate on this".
+                const merged = [
+                    ...(ownedRes.data || []).map(a => Object.assign({}, a, { _relation: 'owner' })),
+                    ...extraActions.map(a => Object.assign({}, a, { _relation: 'collaborator' })),
+                ].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
                 // Fetch meeting details for all unique meeting IDs
-                const meetingIds = [...new Set((actionsData || []).map(a => a.meeting_id).filter(Boolean))];
+                const meetingIds = [...new Set(merged.map(a => a.meeting_id).filter(Boolean))];
                 let meetingsMap = {};
                 if (meetingIds.length > 0) {
                     const { data: meetingsData, error: meetingsErr } = await sb
@@ -1745,7 +1765,7 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
                     });
                 }
                 if (mounted) {
-                    setActions(actionsData || []);
+                    setActions(merged);
                     setMeetings(meetingsMap);
                     setLoading(false);
                 }
@@ -1761,6 +1781,12 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
     }, [currentUser.id]);
     // Toggle action status between open/closed
     const toggleStatus = async (action, note) => {
+        // Owner-only close. Collaborators see the action and can update
+        // progress through the meeting screens but can't close it from here.
+        if (action.owner_user_id && currentUser && action.owner_user_id !== currentUser.id) {
+            alert("Only the action's owner can mark it complete.");
+            return;
+        }
         const newStatus = action.status === 'open' ? 'closed' : 'open';
         const updates = { status: newStatus };
         if (newStatus === 'closed') {
@@ -1782,7 +1808,8 @@ function MyActionsView({ currentUser, profile, projects, users, onOpenMeeting })
                 .single();
             if (error)
                 throw error;
-            setActions(prev => prev.map(a => a.id === action.id ? data : a));
+            // Preserve _relation tag so the row keeps its "Collaborating" badge
+            setActions(prev => prev.map(a => a.id === action.id ? Object.assign({}, data, { _relation: a._relation }) : a));
         }
         catch (e) {
             alert('Failed to update action: ' + e.message);
@@ -1925,7 +1952,7 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
             padding: '2px 8px', borderRadius: 3,
             fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
             fontFamily: "'DM Sans', system-ui, sans-serif",
-        } }, priorityStyle.label)), project && (React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: C.red } }, project.name, project.project_number && React.createElement("span", { style: { color: C.muted, fontWeight: 400 } }, " #", project.project_number))), meetingCfg && meeting && (React.createElement("button", { onClick: () => onOpenMeeting(action.meeting_id), style: {
+        } }, priorityStyle.label)), action._relation === 'collaborator' && React.createElement("span", { title: "You're a collaborator on this action; the owner is responsible for closing it.", style: { background: C.cordSoft, color: C.cord, border: `1px solid ${C.cordMid}`, borderRadius: 3, padding: '2px 8px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Collaborating"), project && (React.createElement("span", { style: { fontSize: 11, fontWeight: 600, color: C.red } }, project.name, project.project_number && React.createElement("span", { style: { color: C.muted, fontWeight: 400 } }, " #", project.project_number))), meetingCfg && meeting && (React.createElement("button", { onClick: () => onOpenMeeting(action.meeting_id), style: {
             background: C.redSoft, border: `1px solid ${C.redMid}`,
             borderRadius: 3, padding: '2px 8px', cursor: 'pointer',
             fontSize: 10, fontWeight: 600, color: C.red,
@@ -2003,6 +2030,46 @@ function UserPickerField({ users, value, onChange, label, department, required, 
             boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100,
             maxHeight: 320, overflowY: 'auto'
         } }, allowClear && value && React.createElement("button", { onClick: () => { onChange(null); setOpen(false); }, style: { display: 'block', width: '100%', textAlign: 'left', padding: '7px 12px', background: 'transparent', border: 'none', borderBottom: `1px solid ${C.line}`, cursor: 'pointer', fontSize: 12, color: C.mist, fontStyle: 'italic', fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Clear selection"), matching.length > 0 && React.createElement(React.Fragment, null, React.createElement("div", { style: { padding: '6px 12px', background: C.cordSoft, fontSize: 9, fontWeight: 700, color: C.cord, textTransform: 'uppercase', letterSpacing: '0.08em' } }, (MEETING_TYPES[department] || { short: department || 'Matching' }).short, " department"), matching.map(renderUser)), others.length > 0 && React.createElement(React.Fragment, null, React.createElement("div", { style: { padding: '6px 12px', background: C.bg, fontSize: 9, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.08em' } }, matching.length > 0 ? "Others" : "All users"), others.map(renderUser)), active.length === 0 && React.createElement("div", { style: { padding: 14, fontSize: 12, color: C.muted, fontStyle: 'italic', textAlign: 'center' } }, "No active users to pick from.")));
+}
+// ============================================================
+// COLLABORATORS FIELD — multi-select user picker
+// Selected users appear as removable chips; click "+ add" to
+// open a list of remaining active users.
+// ============================================================
+function CollaboratorsField({ users, value, onChange, excludeUserId }) {
+    const [open, setOpen] = React.useState(false);
+    const wrapRef = React.useRef(null);
+    React.useEffect(() => {
+        if (!open) return;
+        const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+        window.addEventListener('mousedown', onDown);
+        return () => window.removeEventListener('mousedown', onDown);
+    }, [open]);
+    const selectedIds = Array.isArray(value) ? value : [];
+    const active = (users || []).filter(u => u.active !== false);
+    const userById = {};
+    active.forEach(u => { userById[u.id] = u; });
+    // Also include any selected inactive users for chip display (shouldn't
+    // happen in normal flow, but defensive).
+    (users || []).forEach(u => { if (selectedIds.includes(u.id)) userById[u.id] = u; });
+    const selectedUsers = selectedIds.map(id => userById[id]).filter(Boolean);
+    const addable = active
+        .filter(u => !selectedIds.includes(u.id) && u.id !== excludeUserId)
+        .sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+    const remove = (id) => onChange(selectedIds.filter(x => x !== id));
+    const add = (id) => { onChange([...selectedIds, id]); setOpen(false); };
+    return React.createElement("div", { ref: wrapRef, style: { position: 'relative' } },
+        React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 8px', minHeight: 36, background: C.white, border: `1px solid ${open ? C.cord : C.line}`, borderRadius: 4, alignItems: 'center' } },
+            selectedUsers.length === 0 && React.createElement("span", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic', padding: '2px 4px' } }, "No collaborators"),
+            selectedUsers.map(u => React.createElement("span", { key: u.id, style: { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 4px 3px 8px', background: C.cordSoft, border: `1px solid ${C.cordMid}`, borderRadius: 3, fontSize: 11, fontWeight: 600, color: C.cord } },
+                React.createElement("strong", { style: { fontWeight: 700 } }, u.initials || '\u2014'),
+                React.createElement("span", { style: { color: C.text, fontWeight: 500 } }, u.display_name),
+                React.createElement("button", { type: "button", onClick: () => remove(u.id), title: "Remove", style: { background: 'transparent', border: 'none', color: C.mist, cursor: 'pointer', fontSize: 14, padding: '0 3px', lineHeight: 1 }, onMouseEnter: e => e.currentTarget.style.color = C.redStatus, onMouseLeave: e => e.currentTarget.style.color = C.mist }, "\u00D7"))),
+            React.createElement("button", { type: "button", onClick: () => setOpen(o => !o), disabled: addable.length === 0, style: { padding: '3px 9px', background: 'transparent', border: `1px dashed ${addable.length === 0 ? C.line : C.cordMid}`, color: addable.length === 0 ? C.mist : C.cord, borderRadius: 3, fontSize: 11, fontWeight: 600, cursor: addable.length === 0 ? 'default' : 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif" } }, addable.length === 0 ? "All added" : "+ Add")),
+        open && addable.length > 0 && React.createElement("div", { style: { position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100, maxHeight: 240, overflowY: 'auto' } },
+            addable.map(u => React.createElement("button", { key: u.id, type: "button", onClick: () => add(u.id), style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'transparent', border: 'none', borderBottom: `1px solid ${C.line}`, cursor: 'pointer', fontSize: 13, color: C.text, fontFamily: "'DM Sans', system-ui, sans-serif" }, onMouseEnter: e => e.currentTarget.style.background = C.bg, onMouseLeave: e => e.currentTarget.style.background = 'transparent' },
+                React.createElement("span", null, React.createElement("strong", { style: { color: C.cord, marginRight: 6, fontWeight: 700 } }, u.initials || '\u2014'), u.display_name),
+                u.department && React.createElement("span", { style: { fontSize: 10, fontWeight: 600, color: C.cord, background: C.cordSoft, padding: '1px 7px', borderRadius: 8 } }, (MEETING_TYPES[u.department] || { short: u.department }).short)))));
 }
 // ============================================================
 // PROJECT DASHBOARD VIEW
@@ -2368,6 +2435,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     const [meeting, setMeeting] = useState(null);
     const [entries, setEntries] = useState({}); // { projectId: entry }
     const [actions, setActions] = useState([]);
+    const [actionAssignees, setActionAssignees] = useState([]); // collaborator rows for this meeting's actions
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [activeProjectId, setActiveProjectId] = useState(null);
@@ -2403,6 +2471,19 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
                 (entriesRes.data || []).forEach(e => { entriesMap[e.project_id] = e; });
                 setEntries(entriesMap);
                 setActions(actionsRes.data || []);
+                // Fetch collaborators for these actions in a follow-up query
+                // (kept separate so a missing action_assignees table doesn't
+                // break the whole load).
+                const actionIds = (actionsRes.data || []).map(a => a.id);
+                if (actionIds.length > 0) {
+                    try {
+                        const { data: assigneeData } = await sb.from('action_assignees')
+                            .select('*')
+                            .in('action_id', actionIds);
+                        if (mounted && assigneeData)
+                            setActionAssignees(assigneeData);
+                    } catch (_) { /* table may be absent on older schemas */ }
+                }
                 setAttendees((attRes && attRes.data) ? attRes.data : []);
                 setLoading(false);
                 // Handoffs: load any addressed TO this meeting's department for
@@ -2547,6 +2628,21 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
         return ids;
     }, [meeting, users]);
     const isChair = meeting && currentUser && meeting.chair_user_id === currentUser.id;
+    // Map actionId → array of collaborator user objects, resolved from
+    // actionAssignees + users. Used to render collaborator chips in ActionRow.
+    const collaboratorsByAction = useMemo(() => {
+        const m = {};
+        const userById = {};
+        (users || []).forEach(u => { userById[u.id] = u; });
+        (actionAssignees || []).forEach(a => {
+            if (!a.user_id) return;
+            const u = userById[a.user_id];
+            if (!u) return;
+            if (!m[a.action_id]) m[a.action_id] = [];
+            m[a.action_id].push(u);
+        });
+        return m;
+    }, [actionAssignees, users]);
     // Seed attendance defaults the first time the chair opens the register on
     // a meeting that has none recorded. Resource meetings default to the
     // departmental team; fall back to project team if the department is empty.
@@ -2814,6 +2910,17 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             }).select().single();
             if (error)
                 throw error;
+            // Collaborators — write to action_assignees so they show up in
+            // each collaborator's My Actions list.
+            const collabIds = Array.isArray(actionData.collaborator_user_ids) ? actionData.collaborator_user_ids : [];
+            if (collabIds.length > 0) {
+                const rows = collabIds.map(uid => ({ action_id: data.id, user_id: uid }));
+                const { data: assigneeData, error: aErr } = await sb.from('action_assignees').insert(rows).select();
+                if (aErr)
+                    console.warn('Failed to write collaborators:', aErr.message);
+                else if (assigneeData)
+                    setActionAssignees(prev => [...(prev || []), ...assigneeData]);
+            }
             setActions(prev => [...prev, data]);
             // If this action was created by converting a handoff, link them
             // and mark the handoff acknowledged now that real accountability
@@ -2845,9 +2952,14 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
     };
     const updateAction = async (actionId, updates) => {
         try {
+            // Handle collaborators separately — they live in action_assignees,
+            // not on the actions row itself.
+            const collabUpdate = Array.isArray(updates.collaborator_user_ids) ? updates.collaborator_user_ids : null;
+            const actionFieldUpdates = Object.assign({}, updates);
+            delete actionFieldUpdates.collaborator_user_ids;
             // Centrally stamp completion attribution so every close path
             // (ActionRow list, per-project list, etc.) records who did it.
-            const finalUpdates = Object.assign({}, updates);
+            const finalUpdates = actionFieldUpdates;
             if (updates.status === 'closed') {
                 if (finalUpdates.completed_at === undefined)
                     finalUpdates.completed_at = new Date().toISOString();
@@ -2856,14 +2968,37 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             else if (updates.status === 'open') {
                 finalUpdates.completed_by = null;
             }
-            const { data, error } = await sb.from('actions')
-                .update(finalUpdates)
-                .eq('id', actionId)
-                .select()
-                .single();
-            if (error)
-                throw error;
-            setActions(prev => prev.map(a => a.id === actionId ? data : a));
+            // Only call .update() if there are actual action-field changes
+            // (collaborator-only edits don't need to touch the actions row).
+            if (Object.keys(finalUpdates).length > 0) {
+                const { data, error } = await sb.from('actions')
+                    .update(finalUpdates)
+                    .eq('id', actionId)
+                    .select()
+                    .single();
+                if (error)
+                    throw error;
+                setActions(prev => prev.map(a => a.id === actionId ? data : a));
+            }
+            // Reconcile collaborators if the update included a new set.
+            if (collabUpdate !== null) {
+                const current = new Set((actionAssignees || []).filter(a => a.action_id === actionId).map(a => a.user_id));
+                const desired = new Set(collabUpdate);
+                const toAdd = [...desired].filter(uid => !current.has(uid));
+                const toRemove = (actionAssignees || []).filter(a => a.action_id === actionId && !desired.has(a.user_id));
+                if (toRemove.length > 0) {
+                    const ids = toRemove.map(a => a.id);
+                    const { error: dErr } = await sb.from('action_assignees').delete().in('id', ids);
+                    if (!dErr)
+                        setActionAssignees(prev => prev.filter(a => !ids.includes(a.id)));
+                }
+                if (toAdd.length > 0) {
+                    const rows = toAdd.map(uid => ({ action_id: actionId, user_id: uid }));
+                    const { data: aData, error: aErr } = await sb.from('action_assignees').insert(rows).select();
+                    if (!aErr && aData)
+                        setActionAssignees(prev => [...(prev || []), ...aData]);
+                }
+            }
         }
         catch (e) {
             alert('Failed to update action: ' + e.message);
@@ -2962,13 +3097,13 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
                 background: activeProjectId === p.id ? C.redSoft : 'transparent',
                 borderBottom: `1px solid ${C.line}`,
             } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 } }, React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, p.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, "#", p.project_number)), hasNote && (React.createElement("span", { title: "Notes captured this meeting", style: { width: 7, height: 7, borderRadius: '50%', background: C.green, flexShrink: 0, marginTop: 5 } }))), status && (React.createElement("div", { style: { marginTop: 4 } }, React.createElement("span", { style: { display: 'inline-block', fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3, background: status.bg, color: status.fg } }, status.short)))));
-    })))))), React.createElement("div", null, !activeProject ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 48, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { fontSize: 14, marginBottom: 8 } }, "Select a project from the left to start capturing notes"), React.createElement("div", { style: { fontSize: 12 } }, "Notes auto-save as you type. Actions can be added at any time."))) : (React.createElement(ProjectCapturePane, { project: activeProject, entry: activeEntry, projectActions: projectActions, users: users, isReadOnly: isReadOnly, saveStatus: saveStatus[activeProject.id], meetingCfg: meetingCfg, latestNote: latestNotes ? latestNotes[activeProject.id] : null, keyDates: keyDates ? (keyDates[activeProject.id] || []) : [], isSenior: isSenior, currentUser: currentUser, isChair: isChair, handoffs: handoffs.filter(h => h.project_id === activeProject.id), resultingActions: resultingActions, onCreateHandoff: createHandoff, onAcknowledgeHandoff: acknowledgeHandoff, onConvertHandoff: convertHandoffToAction, meetingType: meeting.meeting_type, onKeyDatesChange: onKeyDatesChange, onUpdateField: (field, value) => updateEntryField(activeProject.id, field, value), onMarkReviewed: (field, val, fromDate) => markReviewedNoChange(activeProject.id, field, val, fromDate), onAddAction: () => setShowAddAction(true), onUpdateAction: updateAction, onDeleteAction: deleteAction })))), React.createElement("div", { style: { marginTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 } }, React.createElement("div", null, isSenior && (React.createElement("button", { onClick: deleteMeeting, style: {
+    })))))), React.createElement("div", null, !activeProject ? (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 48, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { fontSize: 14, marginBottom: 8 } }, "Select a project from the left to start capturing notes"), React.createElement("div", { style: { fontSize: 12 } }, "Notes auto-save as you type. Actions can be added at any time."))) : (React.createElement(ProjectCapturePane, { project: activeProject, entry: activeEntry, projectActions: projectActions, users: users, isReadOnly: isReadOnly, saveStatus: saveStatus[activeProject.id], meetingCfg: meetingCfg, latestNote: latestNotes ? latestNotes[activeProject.id] : null, keyDates: keyDates ? (keyDates[activeProject.id] || []) : [], isSenior: isSenior, currentUser: currentUser, isChair: isChair, handoffs: handoffs.filter(h => h.project_id === activeProject.id), resultingActions: resultingActions, onCreateHandoff: createHandoff, onAcknowledgeHandoff: acknowledgeHandoff, onConvertHandoff: convertHandoffToAction, meetingType: meeting.meeting_type, onKeyDatesChange: onKeyDatesChange, onUpdateField: (field, value) => updateEntryField(activeProject.id, field, value), onMarkReviewed: (field, val, fromDate) => markReviewedNoChange(activeProject.id, field, val, fromDate), onAddAction: () => setShowAddAction(true), onUpdateAction: updateAction, onDeleteAction: deleteAction, collaboratorsByAction: collaboratorsByAction })))), React.createElement("div", { style: { marginTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 } }, React.createElement("div", null, isSenior && (React.createElement("button", { onClick: deleteMeeting, style: {
             padding: '7px 14px', background: 'transparent',
             color: C.redStatus, border: `1px solid ${C.redStatus}`,
             borderRadius: 3, cursor: 'pointer', fontSize: 12,
             fontWeight: 600, fontFamily: "'DM Sans', system-ui, sans-serif",
             letterSpacing: '0.03em',
-        } }, "Delete meeting"))), React.createElement("div", { style: { display: 'flex', gap: 8 } }, !isReadOnly && (React.createElement(React.Fragment, null, React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "Generate round-up (", actions.length, ")"), React.createElement("button", { onClick: closeMeeting, style: btnPrimary() }, "End meeting"))), isReadOnly && (React.createElement(React.Fragment, null, isSenior && React.createElement("button", { onClick: reopenMeeting, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: C.amber, color: C.amber }) }, "Reopen meeting"), React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "View round-up (", actions.length, ")"))))), actions.length > 0 && (React.createElement("div", { style: { marginTop: 16, background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { background: C.prussian, padding: '10px 16px', borderBottom: `1px solid ${C.prussianDark}`, fontSize: 10, color: C.prussianMid, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "All actions in this meeting (", actions.length, ")"), React.createElement("div", null, actions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: projects, isReadOnly: isReadOnly, onUpdate: updateAction, onDelete: deleteAction })))))), (() => {
+        } }, "Delete meeting"))), React.createElement("div", { style: { display: 'flex', gap: 8 } }, !isReadOnly && (React.createElement(React.Fragment, null, React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "Generate round-up (", actions.length, ")"), React.createElement("button", { onClick: closeMeeting, style: btnPrimary() }, "End meeting"))), isReadOnly && (React.createElement(React.Fragment, null, isSenior && React.createElement("button", { onClick: reopenMeeting, style: Object.assign(Object.assign({}, btnSecondary()), { borderColor: C.amber, color: C.amber }) }, "Reopen meeting"), React.createElement("button", { onClick: () => setShowRoundUp(true), style: btnSecondary(), disabled: actions.length === 0 }, "View round-up (", actions.length, ")"))))), actions.length > 0 && (React.createElement("div", { style: { marginTop: 16, background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { background: C.prussian, padding: '10px 16px', borderBottom: `1px solid ${C.prussianDark}`, fontSize: 10, color: C.prussianMid, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "All actions in this meeting (", actions.length, ")"), React.createElement("div", null, actions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: projects, isReadOnly: isReadOnly, onUpdate: updateAction, onDelete: deleteAction, collaborators: collaboratorsByAction[a.id] || [], currentUser: currentUser })))))), (() => {
         const raised = (handoffs || []).filter(h => h.from_meeting_id === meetingId);
         if (raised.length === 0)
             return null;
@@ -2989,7 +3124,7 @@ function MeetingDetailView({ meetingId, projects, users, currentUser, profile, i
             }
             return React.createElement("div", { key: h.id, style: { padding: '10px 16px', borderBottom: `1px solid ${C.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 } }, React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 12, color: C.text, lineHeight: 1.4 } }, proj && React.createElement("span", { style: { fontWeight: 600 } }, `${proj.name} `), React.createElement("span", { style: { color: C.mist, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' } }, `\u2192 ${toCfg.short || h.to_department}`)), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginTop: 3 } }, h.note), isAck && h.resulting_action_id && React.createElement("div", { style: { fontSize: 10, color: C.muted, marginTop: 3, fontStyle: 'italic' } }, "Became an action", resultOwner ? ` \u00B7 ${resultOwner}` : '', (resultAction && resultAction.due_date) ? ` \u00B7 due ${formatMeetingDate(resultAction.due_date)}` : '')), React.createElement("span", { style: { fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', color: isAck ? C.green : C.amber } }, isAck ? (h.resulting_action_id ? "\u2713 Converted" : "\u2713 Acknowledged") : "Pending"));
         })));
-    })(), showAddAction && activeProject && (React.createElement(AddActionModal, { project: activeProject, users: users, prefillDescription: convertingHandoff ? convertingHandoff.note : '', isConversion: !!convertingHandoff, onClose: () => { setShowAddAction(false); setConvertingHandoff(null); }, onAdd: addAction })), showAttendance && (React.createElement(AttendancePanel, { attendees: attendees, users: users, projectTeamUserIds: projectTeamUserIds, departmentUserIds: departmentUserIds, chairUserId: meeting ? meeting.chair_user_id : null, meetingTypeShort: (MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }).short, isChair: isChair, isReadOnly: isReadOnly, onToggle: toggleAttendeePresent, onAdd: addAttendee, onRemove: removeAttendee, onApplyGroup: applyAttendanceGroup, onRemoveGroup: removeAttendanceGroup, onClose: () => setShowAttendance(false) })), showRoundUp && (React.createElement(RoundUpModal, { meeting: meeting, actions: actions, users: users, projects: projects, chairName: profile.display_name, attendees: attendees, handoffs: handoffs.filter(h => h.from_meeting_id === meetingId), onClose: () => setShowRoundUp(false) }))))));
+    })(), showAddAction && activeProject && (React.createElement(AddActionModal, { project: activeProject, users: users, prefillDescription: convertingHandoff ? convertingHandoff.note : '', isConversion: !!convertingHandoff, onClose: () => { setShowAddAction(false); setConvertingHandoff(null); }, onAdd: addAction })), showAttendance && (React.createElement(AttendancePanel, { attendees: attendees, users: users, projectTeamUserIds: projectTeamUserIds, departmentUserIds: departmentUserIds, chairUserId: meeting ? meeting.chair_user_id : null, meetingTypeShort: (MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }).short, isChair: isChair, isReadOnly: isReadOnly, onToggle: toggleAttendeePresent, onAdd: addAttendee, onRemove: removeAttendee, onApplyGroup: applyAttendanceGroup, onRemoveGroup: removeAttendanceGroup, onClose: () => setShowAttendance(false) })), showRoundUp && (React.createElement(RoundUpModal, { meeting: meeting, actions: actions, users: users, projects: projects, chairName: profile.display_name, attendees: attendees, handoffs: handoffs.filter(h => h.from_meeting_id === meetingId), actionAssignees: actionAssignees, onClose: () => setShowRoundUp(false) }))))));
 }
 // ============================================================
 // KEY DATES SECTION — in meeting capture pane
@@ -3159,7 +3294,7 @@ function KeyDatesSection({ project, keyDates, isSenior, currentUser, users, meet
 // ============================================================
 // PROJECT CAPTURE PANE (within MeetingDetailView)
 // ============================================================
-function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly, saveStatus, meetingCfg, latestNote, keyDates, isSenior, currentUser, isChair, handoffs, resultingActions, onCreateHandoff, onAcknowledgeHandoff, onConvertHandoff, meetingType, onKeyDatesChange, onUpdateField, onMarkReviewed, onAddAction, onUpdateAction, onDeleteAction }) {
+function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly, saveStatus, meetingCfg, latestNote, keyDates, isSenior, currentUser, isChair, handoffs, resultingActions, onCreateHandoff, onAcknowledgeHandoff, onConvertHandoff, meetingType, onKeyDatesChange, onUpdateField, onMarkReviewed, onAddAction, onUpdateAction, onDeleteAction, collaboratorsByAction }) {
     const cfg = meetingCfg || MEETING_TYPES['pre-con'];
     const status = statusLookup[project.status] || { label: '—', bg: '#EEE', fg: C.muted };
     const [showOtherNotes, setShowOtherNotes] = useState(false);
@@ -3262,7 +3397,7 @@ function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly,
                 fontStyle: displayValue ? 'normal' : 'italic',
                 minHeight: 36, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
             } }, displayValue || 'No notes created yet')));
-    }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 28, paddingTop: 4 } }, React.createElement("div", { style: { height: 3, background: C.fog, borderRadius: 2, marginBottom: 20 } }), React.createElement("div", { style: { background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '14px 18px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: projectActions.length > 0 ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.prussian, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Actions (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '6px 12px' }) }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic', padding: '4px 0' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true })))))), React.createElement("div", { style: { padding: '14px 18px' } }, (() => {
+    }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 28, paddingTop: 4 } }, React.createElement("div", { style: { height: 3, background: C.fog, borderRadius: 2, marginBottom: 20 } }), React.createElement("div", { style: { background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '14px 18px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: projectActions.length > 0 ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.prussian, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Actions (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '6px 12px' }) }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic', padding: '4px 0' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true, collaborators: (collaboratorsByAction && collaboratorsByAction[a.id]) || [], currentUser: currentUser })))))), React.createElement("div", { style: { padding: '14px 18px' } }, (() => {
         const outgoing = (handoffs || []).filter(h => h.from_meeting_type === meetingType && h.to_department !== meetingType);
         return React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: (outgoing.length > 0 || showHandoffForm) ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.cord, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Flagged for other teams (", outgoing.length, ")"), !isReadOnly && !showHandoffForm && (React.createElement("button", { onClick: () => { setShowHandoffForm(true); setHandoffDept(''); setHandoffNote(''); }, style: { background: 'transparent', border: `1px solid ${C.cordMid}`, color: C.cord, borderRadius: 3, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", null, "\u2691"), "Flag for another team")));
     })(), showHandoffForm && (React.createElement("div", { style: { background: C.cordSoft, border: `1px solid ${C.cordMid}`, borderRadius: 4, padding: 14, marginBottom: 12 } }, React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 8 } }, "This surfaces as a callout when that team's meeting next opens this project. Their chair can acknowledge it or convert it to an action."), React.createElement("div", { style: { marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4, fontWeight: 600 } }, "Which team?"), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, MEETING_TYPE_OPTIONS.filter(o => o.value !== meetingType).map(o => (React.createElement("button", { key: o.value, onClick: () => setHandoffDept(o.value), style: { padding: '5px 10px', fontSize: 11, fontWeight: 600, borderRadius: 3, cursor: 'pointer', border: `1px solid ${handoffDept === o.value ? C.cord : C.line}`, background: handoffDept === o.value ? C.cord : C.white, color: handoffDept === o.value ? '#fff' : C.text, fontFamily: "'DM Sans', system-ui, sans-serif" } }, o.label.replace(' Meeting', '')))))), React.createElement("textarea", { value: handoffNote, onChange: e => setHandoffNote(e.target.value), placeholder: "What does that team need to know or do?", rows: 3, style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', resize: 'vertical', marginBottom: 8 }) }), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("button", { onClick: () => { if (handoffDept && handoffNote.trim()) {
@@ -3340,18 +3475,24 @@ function CapturePaneSaveIndicator({ status }) {
 // ============================================================
 // ACTION ROW (used in capture pane + register)
 // ============================================================
-function ActionRow({ action, users, projects, isReadOnly, onUpdate, onDelete, compact }) {
+function ActionRow({ action, users, projects, isReadOnly, onUpdate, onDelete, compact, collaborators, currentUser }) {
     const owner = action.owner_user_id ? users.find(u => u.id === action.owner_user_id) : null;
     const ownerLabel = owner ? owner.display_name : (action.owner_name_fallback || 'Unassigned');
+    const collabList = Array.isArray(collaborators) ? collaborators : [];
     const project = action.project_id ? projects.find(p => p.id === action.project_id) : null;
     const [showCloseForm, setShowCloseForm] = useState(false);
     const [closeNote, setCloseNote] = useState('');
     const isClosed = action.status === 'closed';
+    // Only the action's owner can close or reopen. Collaborators can see
+    // and update progress (via Add/Edit elsewhere) but can't close.
+    // If no current user is known (defensive), permission stays open so
+    // pre-Phase-2c.1 behaviour isn't broken silently.
+    const isOwnerOrUnknown = !currentUser || !action.owner_user_id || action.owner_user_id === currentUser.id;
+    const canToggle = isOwnerOrUnknown && !(isReadOnly && isClosed);
     const handleCheck = () => {
-        if (isReadOnly && isClosed)
-            return; // can close open actions even in read-only meetings
+        if (!canToggle)
+            return;
         if (isClosed) {
-            // Reopen — no note needed
             onUpdate(action.id, { status: 'open', completed_note: null, completed_at: null });
         }
         else {
@@ -3373,7 +3514,7 @@ function ActionRow({ action, users, projects, isReadOnly, onUpdate, onDelete, co
             padding: compact ? '6px 10px' : '8px 14px',
             borderBottom: `1px solid ${C.line}`,
             opacity: isClosed ? 0.6 : 1,
-        } }, React.createElement("div", { style: { display: 'flex', gap: 10, alignItems: 'flex-start' } }, React.createElement("input", { type: "checkbox", checked: isClosed, onChange: handleCheck, disabled: isReadOnly && isClosed, style: { marginTop: 2, accentColor: C.cord, cursor: isReadOnly ? 'default' : 'pointer', flexShrink: 0 } }), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, color: C.text, textDecoration: action.status === 'closed' ? 'line-through' : 'none', lineHeight: 1.4 } }, action.description), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2, display: 'flex', gap: 10, flexWrap: 'wrap' } }, React.createElement("span", null, React.createElement("strong", { style: { color: C.text } }, ownerLabel)), project && !compact && React.createElement("span", null, project.name), action.due_date && React.createElement("span", null, "Due ", formatMeetingDate(action.due_date)), action.priority === 'high' && React.createElement("span", { style: { color: C.amber, fontWeight: 600 } }, "High priority"), action.priority === 'urgent' && React.createElement("span", { style: { color: C.redStatus, fontWeight: 600 } }, "Urgent")), action.completed_note && isClosed && (React.createElement("div", { style: { fontSize: 11, color: C.green, fontStyle: 'italic', marginTop: 3 } }, "\u2713 ", action.completed_note, (() => {
+        } }, React.createElement("div", { style: { display: 'flex', gap: 10, alignItems: 'flex-start' } }, React.createElement("input", { type: "checkbox", checked: isClosed, onChange: handleCheck, disabled: !canToggle, title: !isOwnerOrUnknown ? `Only ${ownerLabel} (the owner) can close this action` : '', style: { marginTop: 2, accentColor: C.cord, cursor: canToggle ? 'pointer' : 'not-allowed', flexShrink: 0, opacity: !isOwnerOrUnknown ? 0.5 : 1 } }), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, color: C.text, textDecoration: action.status === 'closed' ? 'line-through' : 'none', lineHeight: 1.4 } }, action.description), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2, display: 'flex', gap: 10, flexWrap: 'wrap' } }, React.createElement("span", null, React.createElement("strong", { style: { color: C.text } }, ownerLabel)), collabList.length > 0 && React.createElement("span", { style: { display: 'inline-flex', alignItems: 'center', gap: 4, color: C.muted } }, React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' } }, "with"), collabList.map(c => React.createElement("span", { key: c.id, title: c.display_name, style: { display: 'inline-block', padding: '1px 5px', background: C.cordSoft, color: C.cord, border: `1px solid ${C.cordMid}`, borderRadius: 8, fontSize: 9, fontWeight: 700 } }, c.initials || c.display_name))), project && !compact && React.createElement("span", null, project.name), action.due_date && React.createElement("span", null, "Due ", formatMeetingDate(action.due_date)), action.priority === 'high' && React.createElement("span", { style: { color: C.amber, fontWeight: 600 } }, "High priority"), action.priority === 'urgent' && React.createElement("span", { style: { color: C.redStatus, fontWeight: 600 } }, "Urgent")), action.completed_note && isClosed && (React.createElement("div", { style: { fontSize: 11, color: C.green, fontStyle: 'italic', marginTop: 3 } }, "\u2713 ", action.completed_note, (() => {
         const closer = users && action.completed_by ? users.find(u => u.id === action.completed_by) : null;
         const datePart = action.completed_at ? formatMeetingDate(action.completed_at.slice(0, 10)) : '';
         const byPart = closer ? `by ${closer.display_name}` : '';
@@ -3392,6 +3533,7 @@ function AddActionModal({ project, users, onClose, onAdd, prefillDescription, is
     const [ownerMode, setOwnerMode] = useState('user'); // 'user' | 'other'
     const [ownerUserId, setOwnerUserId] = useState('');
     const [ownerNameFallback, setOwnerNameFallback] = useState('');
+    const [collaboratorIds, setCollaboratorIds] = useState([]);
     const [dueDate, setDueDate] = useState('');
     const [priority, setPriority] = useState('normal');
     const [busy, setBusy] = useState(false);
@@ -3410,6 +3552,7 @@ function AddActionModal({ project, users, onClose, onAdd, prefillDescription, is
                 description: description.trim(),
                 owner_user_id: ownerMode === 'user' ? ownerUserId : null,
                 owner_name_fallback: ownerMode === 'other' ? ownerNameFallback.trim() : null,
+                collaborator_user_ids: collaboratorIds,
                 due_date: dueDate || null,
                 priority,
             });
@@ -3430,7 +3573,7 @@ function AddActionModal({ project, users, onClose, onAdd, prefillDescription, is
             color: ownerMode === 'other' ? C.white : C.text,
             border: `1px solid ${ownerMode === 'other' ? C.red : C.line}`,
             borderRadius: 4, cursor: 'pointer',
-        } }, "Other person")), ownerMode === 'user' ? (React.createElement("select", { value: ownerUserId, onChange: (e) => setOwnerUserId(e.target.value), required: true, style: inputStyle() }, React.createElement("option", { value: "" }, "Select\u2026"), users.map(u => React.createElement("option", { key: u.id, value: u.id }, u.display_name, " ", u.initials ? `(${u.initials})` : '')))) : (React.createElement("input", { type: "text", value: ownerNameFallback, onChange: (e) => setOwnerNameFallback(e.target.value), required: true, placeholder: "Name", style: inputStyle() }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Due date" }, React.createElement("input", { type: "date", value: dueDate, onChange: (e) => setDueDate(e.target.value), style: inputStyle() })), React.createElement(Field, { label: "Priority" }, React.createElement("select", { value: priority, onChange: (e) => setPriority(e.target.value), style: inputStyle() }, React.createElement("option", { value: "normal" }, "Normal"), React.createElement("option", { value: "high" }, "High"), React.createElement("option", { value: "urgent" }, "Urgent")))), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Adding…' : 'Add action'))))));
+        } }, "Other person")), ownerMode === 'user' ? (React.createElement("select", { value: ownerUserId, onChange: (e) => setOwnerUserId(e.target.value), required: true, style: inputStyle() }, React.createElement("option", { value: "" }, "Select\u2026"), users.map(u => React.createElement("option", { key: u.id, value: u.id }, u.display_name, " ", u.initials ? `(${u.initials})` : '')))) : (React.createElement("input", { type: "text", value: ownerNameFallback, onChange: (e) => setOwnerNameFallback(e.target.value), required: true, placeholder: "Name", style: inputStyle() }))), React.createElement(Field, { label: "Collaborators" }, React.createElement(CollaboratorsField, { users: users, value: collaboratorIds, onChange: setCollaboratorIds, excludeUserId: ownerMode === 'user' ? ownerUserId : null }), React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 4, fontStyle: 'italic' } }, "People working on this action with the owner. They'll see it in their actions list; only the owner can close it.")), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Due date" }, React.createElement("input", { type: "date", value: dueDate, onChange: (e) => setDueDate(e.target.value), style: inputStyle() })), React.createElement(Field, { label: "Priority" }, React.createElement("select", { value: priority, onChange: (e) => setPriority(e.target.value), style: inputStyle() }, React.createElement("option", { value: "normal" }, "Normal"), React.createElement("option", { value: "high" }, "High"), React.createElement("option", { value: "urgent" }, "Urgent")))), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Adding…' : 'Add action'))))));
 }
 // ============================================================
 // ROUND-UP MODAL — generates per-recipient mailto links
@@ -3474,47 +3617,76 @@ function AttendancePanel({ attendees, users, projectTeamUserIds, departmentUserI
         return (React.createElement("div", { key: att.id, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 4, background: att.present ? C.cordSoft : C.bg, border: `1px solid ${att.present ? C.cordMid : C.line}` } }, React.createElement("button", { onClick: () => canEdit && !isThisChair && onToggle(att), disabled: !canEdit || isThisChair, title: isThisChair ? "Chair is always present" : (canEdit ? (att.present ? 'Mark absent' : 'Mark present') : ''), style: { width: 22, height: 22, borderRadius: '50%', border: `2px solid ${att.present ? C.cord : C.mist}`, background: att.present ? C.cord : 'transparent', cursor: (canEdit && !isThisChair) ? 'pointer' : 'default', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, fontWeight: 700, padding: 0, opacity: isThisChair ? 0.85 : 1 } }, att.present ? '\u2713' : ''), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: C.text } }, name, isThisChair && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: '#fff', marginLeft: 6, background: C.cord, padding: '2px 7px', borderRadius: 8, textTransform: 'uppercase', letterSpacing: '0.08em' } }, "Chair"), !isThisChair && dept && React.createElement("span", { style: { fontSize: 10, fontWeight: 600, color: C.cord, marginLeft: 6, background: C.cordSoft, padding: '1px 6px', borderRadius: 8 } }, dept)), React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 2 } }, sourceLabel, (att.present || isThisChair) ? '' : ' \u00B7 absent')), canEdit && !isThisChair && React.createElement("button", { onClick: () => onRemove(att), title: "Remove from register", style: { background: 'transparent', border: 'none', color: C.mist, cursor: 'pointer', fontSize: 16, padding: '0 4px', lineHeight: 1, flexShrink: 0 }, onMouseEnter: e => e.currentTarget.style.color = C.redStatus, onMouseLeave: e => e.currentTarget.style.color = C.mist }, "\u00D7")));
     }))), canEdit && (React.createElement("div", { style: { marginTop: 18 } }, !showAddList ? (React.createElement("button", { onClick: () => setShowAddList(true), style: Object.assign(Object.assign({}, btnSecondary()), { width: '100%' }) }, "+ Add an individual")) : (React.createElement("div", { style: { border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '8px 12px', background: C.bg, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted } }, "Add any organisation member"), addable.length === 0 ? (React.createElement("div", { style: { padding: 12, fontSize: 12, color: C.muted, fontStyle: 'italic' } }, "Everyone is already on the register.")) : (addable.map(u => (React.createElement("button", { key: u.id, onClick: () => { onAdd(u.id); }, style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', padding: '10px 12px', background: 'transparent', border: 'none', borderBottom: `1px solid ${C.line}`, cursor: 'pointer', fontSize: 13, color: C.text, fontFamily: "'DM Sans', system-ui, sans-serif" }, onMouseEnter: e => e.currentTarget.style.background = C.cordSoft, onMouseLeave: e => e.currentTarget.style.background = 'transparent' }, React.createElement("span", null, u.display_name, u.initials && React.createElement("span", { style: { color: C.mist, marginLeft: 6 } }, `(${u.initials})`)), u.department && React.createElement("span", { style: { fontSize: 10, color: C.cord, fontWeight: 600 } }, deptLabel(u.department)))))), React.createElement("button", { onClick: () => setShowAddList(false), style: { display: 'block', width: '100%', padding: '8px', background: C.bg, border: 'none', borderTop: `1px solid ${C.line}`, cursor: 'pointer', fontSize: 11, color: C.muted, fontWeight: 600 } }, "Done"))))))));
 }
-function RoundUpModal({ meeting, actions, users, projects, chairName, attendees, handoffs, onClose }) {
+function RoundUpModal({ meeting, actions, users, projects, chairName, attendees, handoffs, actionAssignees, onClose }) {
     const meetingLabel = (MEETING_TYPES[meeting.meeting_type] || { label: meeting.meeting_type }).label;
-    // Group actions by recipient
+    // Map actionId -> array of collaborator user objects
+    const collaboratorsByAction = useMemo(() => {
+        const m = {};
+        const userById = {};
+        (users || []).forEach(u => { userById[u.id] = u; });
+        (actionAssignees || []).forEach(a => {
+            if (!a.user_id) return;
+            const u = userById[a.user_id];
+            if (!u) return;
+            if (!m[a.action_id]) m[a.action_id] = [];
+            m[a.action_id].push(u);
+        });
+        return m;
+    }, [actionAssignees, users]);
+    // Group actions by recipient. Each action goes to its owner (existing
+    // behaviour) AND to each collaborator, so collaborators get a round-up
+    // listing what they're working on. Each row in the recipient's list is
+    // tagged with the user's relationship to that action ('owner' or
+    // 'collaborator') so the body can label appropriately.
     const grouped = useMemo(() => {
         const byKey = {}; // key = email or name fallback
-        actions.forEach(a => {
-            let key, name, email;
-            if (a.owner_user_id) {
-                const u = users.find(uu => uu.id === a.owner_user_id);
-                if (!u)
-                    return;
-                key = u.email;
-                name = u.display_name;
-                email = u.email;
-            }
-            else if (a.owner_name_fallback) {
-                key = a.owner_name_fallback;
-                name = a.owner_name_fallback;
-                email = ''; // unknown
-            }
-            else {
-                return;
-            }
+        const push = (key, name, email, action, relation) => {
             if (!byKey[key])
                 byKey[key] = { name, email, actions: [] };
-            byKey[key].actions.push(a);
+            byKey[key].actions.push({ action, relation });
+        };
+        actions.forEach(a => {
+            // Owner row
+            if (a.owner_user_id) {
+                const u = users.find(uu => uu.id === a.owner_user_id);
+                if (u)
+                    push(u.email, u.display_name, u.email, a, 'owner');
+            }
+            else if (a.owner_name_fallback) {
+                push(a.owner_name_fallback, a.owner_name_fallback, '', a, 'owner');
+            }
+            // Collaborator rows
+            (collaboratorsByAction[a.id] || []).forEach(c => {
+                push(c.email, c.display_name, c.email, a, 'collaborator');
+            });
         });
         return Object.values(byKey);
-    }, [actions, users]);
+    }, [actions, users, collaboratorsByAction]);
     const buildEmail = (recipient) => {
         const subject = `${meetingLabel} Round-up — ${formatMeetingDate(meeting.meeting_date)} — Your Actions`;
         const lines = [];
         lines.push(`Hi ${recipient.name.split(' ')[0]},`);
         lines.push('');
-        lines.push(`Following the ${meetingLabel} on ${formatMeetingDateLong(meeting.meeting_date)}, here are the actions assigned to you:`);
+        lines.push(`Following the ${meetingLabel} on ${formatMeetingDateLong(meeting.meeting_date)}, here are the actions you're involved in:`);
         lines.push('');
-        recipient.actions.forEach(a => {
-            lines.push(`— ${a.description}`);
+        recipient.actions.forEach(item => {
+            const a = item.action;
+            const rel = item.relation;
+            const tag = rel === 'collaborator' ? ' [collaborating]' : '';
+            lines.push(`— ${a.description}${tag}`);
             const project = a.project_id ? projects.find(p => p.id === a.project_id) : null;
             if (project)
                 lines.push(`   Project: ${project.name} (#${project.project_number})`);
+            if (rel === 'collaborator' && a.owner_user_id) {
+                const ownerU = users.find(u => u.id === a.owner_user_id);
+                if (ownerU)
+                    lines.push(`   Owner: ${ownerU.display_name}`);
+            }
+            if (rel === 'owner') {
+                const collabs = (collaboratorsByAction[a.id] || []);
+                if (collabs.length > 0)
+                    lines.push(`   With: ${collabs.map(c => c.display_name).join(', ')}`);
+            }
             if (a.due_date)
                 lines.push(`   Due: ${formatMeetingDate(a.due_date)}`);
             if (a.priority === 'high')
@@ -3539,11 +3711,24 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, attendees,
         lines.push('');
         grouped.forEach(r => {
             lines.push(`${r.name}${r.email ? ` <${r.email}>` : ''}`);
-            r.actions.forEach(a => {
-                lines.push(`  — ${a.description}`);
+            r.actions.forEach(item => {
+                const a = item.action;
+                const rel = item.relation;
+                const tag = rel === 'collaborator' ? ' [collaborating]' : '';
+                lines.push(`  — ${a.description}${tag}`);
                 const project = a.project_id ? projects.find(p => p.id === a.project_id) : null;
                 if (project)
                     lines.push(`     Project: ${project.name} (#${project.project_number})`);
+                if (rel === 'collaborator' && a.owner_user_id) {
+                    const ownerU = users.find(u => u.id === a.owner_user_id);
+                    if (ownerU)
+                        lines.push(`     Owner: ${ownerU.display_name}`);
+                }
+                if (rel === 'owner') {
+                    const collabs = (collaboratorsByAction[a.id] || []);
+                    if (collabs.length > 0)
+                        lines.push(`     With: ${collabs.map(c => c.display_name).join(', ')}`);
+                }
                 if (a.due_date)
                     lines.push(`     Due: ${formatMeetingDate(a.due_date)}`);
                 if (a.priority === 'high')
@@ -3604,10 +3789,11 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, attendees,
             const pname = p ? `${esc(p.name)} <span style="color:#6B7270;font-weight:400">#${esc(p.project_number)}</span>` : 'Unassigned';
             let rows = byProject[pid].map(a => {
                 const owner = a.owner_user_id ? (users.find(u => u.id === a.owner_user_id) || {}).display_name : a.owner_name_fallback;
+                const collabs = (collaboratorsByAction[a.id] || []).map(c => c.display_name).join(', ');
                 const st = a.status === 'closed' ? '<span style="color:#2D7A5F">\u2713 Closed</span>' : '<span style="color:#C47D11">Open</span>';
-                return `<tr><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD">${esc(a.description)}</td><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD;white-space:nowrap">${esc(owner || '\u2014')}</td><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD;white-space:nowrap">${a.due_date ? esc(formatMeetingDate(a.due_date)) : '\u2014'}</td><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD;white-space:nowrap">${st}</td></tr>`;
+                return `<tr><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD">${esc(a.description)}</td><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD;white-space:nowrap">${esc(owner || '\u2014')}</td><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD">${esc(collabs || '\u2014')}</td><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD;white-space:nowrap">${a.due_date ? esc(formatMeetingDate(a.due_date)) : '\u2014'}</td><td style="padding:6px 10px;border-bottom:1px solid #E2E0DD;white-space:nowrap">${st}</td></tr>`;
             }).join('');
-            projectsHtml += `<h3 style="font-family:'DM Sans',sans-serif;font-size:15px;color:#1C1F1E;margin:24px 0 8px;border-bottom:2px solid #4A9B8E;padding-bottom:4px">${pname}</h3><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#6B7270;font-size:10px;text-transform:uppercase;letter-spacing:0.08em"><th style="padding:4px 10px">Action</th><th style="padding:4px 10px">Owner</th><th style="padding:4px 10px">Due</th><th style="padding:4px 10px">Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+            projectsHtml += `<h3 style="font-family:'DM Sans',sans-serif;font-size:15px;color:#1C1F1E;margin:24px 0 8px;border-bottom:2px solid #4A9B8E;padding-bottom:4px">${pname}</h3><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#6B7270;font-size:10px;text-transform:uppercase;letter-spacing:0.08em"><th style="padding:4px 10px">Action</th><th style="padding:4px 10px">Owner</th><th style="padding:4px 10px">Collaborators</th><th style="padding:4px 10px">Due</th><th style="padding:4px 10px">Status</th></tr></thead><tbody>${rows}</tbody></table>`;
         });
         // Flags raised in this meeting — the broad-strokes "what happened"
         // record. Informational; not separately emailed to receiving teams.
@@ -3634,13 +3820,26 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, attendees,
             lines.push('');
             lines.push(`Hi ${r.name.split(' ')[0]},`);
             lines.push('');
-            lines.push(`Following the ${meetingLabel} on ${formatMeetingDateLong(meeting.meeting_date)}, here are the actions assigned to you:`);
+            lines.push(`Following the ${meetingLabel} on ${formatMeetingDateLong(meeting.meeting_date)}, here are the actions you're involved in:`);
             lines.push('');
-            r.actions.forEach(a => {
-                lines.push(`— ${a.description}`);
+            r.actions.forEach(item => {
+                const a = item.action;
+                const rel = item.relation;
+                const tag = rel === 'collaborator' ? ' [collaborating]' : '';
+                lines.push(`— ${a.description}${tag}`);
                 const project = a.project_id ? projects.find(p => p.id === a.project_id) : null;
                 if (project)
                     lines.push(`   Project: ${project.name} (#${project.project_number})`);
+                if (rel === 'collaborator' && a.owner_user_id) {
+                    const ownerU = users.find(u => u.id === a.owner_user_id);
+                    if (ownerU)
+                        lines.push(`   Owner: ${ownerU.display_name}`);
+                }
+                if (rel === 'owner') {
+                    const collabs = (collaboratorsByAction[a.id] || []);
+                    if (collabs.length > 0)
+                        lines.push(`   With: ${collabs.map(c => c.display_name).join(', ')}`);
+                }
                 if (a.due_date)
                     lines.push(`   Due: ${formatMeetingDate(a.due_date)}`);
                 if (a.priority === 'high')
@@ -3654,7 +3853,7 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, attendees,
             lines.push(chairName);
             navigator.clipboard.writeText(lines.join('\n'));
             alert('Copied to clipboard. Paste into a new email manually.');
-        }, style: btnSecondary() }, "Copy"))), React.createElement("div", { style: { fontSize: 12, color: C.text, paddingTop: 8, borderTop: `1px solid ${C.line}` } }, React.createElement("strong", null, r.actions.length, " action", r.actions.length === 1 ? '' : 's', ":"), React.createElement("ul", { style: { margin: '6px 0 0', paddingLeft: 18 } }, r.actions.map(a => (React.createElement("li", { key: a.id, style: { marginBottom: 2 } }, a.description, a.due_date && React.createElement("span", { style: { color: C.muted } }, " \u00B7 Due ", formatMeetingDate(a.due_date)))))))))))))));
+        }, style: btnSecondary() }, "Copy"))), React.createElement("div", { style: { fontSize: 12, color: C.text, paddingTop: 8, borderTop: `1px solid ${C.line}` } }, React.createElement("strong", null, r.actions.length, " action", r.actions.length === 1 ? '' : 's', ":"), React.createElement("ul", { style: { margin: '6px 0 0', paddingLeft: 18 } }, r.actions.map(item => (React.createElement("li", { key: item.action.id + ':' + item.relation, style: { marginBottom: 2 } }, item.action.description, item.relation === 'collaborator' && React.createElement("span", { style: { color: C.cord, fontWeight: 600, fontSize: 10, marginLeft: 6, textTransform: 'uppercase', letterSpacing: '0.05em' } }, "Collab"), item.action.due_date && React.createElement("span", { style: { color: C.muted } }, " \u00B7 Due ", formatMeetingDate(item.action.due_date)))))))))))))));
 }
 function Field({ label, children }) {
     return (React.createElement("div", { style: { marginBottom: 14 } }, React.createElement("label", { style: labelStyle() }, label), children));
