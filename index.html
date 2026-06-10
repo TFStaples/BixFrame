@@ -38,6 +38,25 @@
     color: rgba(232,234,232,0.45); font-size: 10px; margin-top: 12px;
     text-align: center; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600;
   }
+
+  /* ----- Motion pass (Phase 2b) — all gated on prefers-reduced-motion ----- */
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+    button { transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease; }
+    button:active { transform: scale(0.97); }
+    .bf-reveal { opacity: 0; transform: translateY(14px); }
+    .bf-reveal.bf-in { opacity: 1; transform: none; transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.3, 0.7, 0.4, 1); }
+    .bf-overlay { animation: bf-overlay-in 0.18s ease both; }
+    .bf-modal { animation: bf-modal-in 0.22s cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+    .bf-drawer { animation: bf-drawer-in 0.24s cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+    .bf-lift { transition: transform 0.18s cubic-bezier(0.3, 0.7, 0.4, 1), box-shadow 0.18s ease, border-color 0.18s ease; }
+    .bf-lift:hover { transform: translateY(-2px); }
+  }
+  /* Reveal fallback: without motion preference (or without JS observers),
+     content must still be visible — .bf-in is also added eagerly. */
+  @keyframes bf-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes bf-modal-in { from { opacity: 0; transform: translateY(10px) scale(0.985); } to { opacity: 1; transform: none; } }
+  @keyframes bf-drawer-in { from { opacity: 0.4; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 </style>
 </head>
 <body>
@@ -650,8 +669,8 @@ ${formatMeetingDate(ms.target_date)}`, x: e.clientX, y: e.clientY }), onMouseLea
             width: (Math.min(endWeek + 1, weeks.length) - Math.max(0, startWeek)) * WEEK_W,
             top: 8, bottom: 8, borderRadius: 3,
             background: '#222', pointerEvents: 'none', zIndex: 1,
-        } })))))))), addKdProjectId && (React.createElement("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: () => setAddKdProjectId(null) }, React.createElement("div", { onClick: e => e.stopPropagation(), style: { background: C.white, borderRadius: 6, padding: 28, width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' } }, React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 } }, "Set date \u2014 ", (_a = projects.find(p => p.id === addKdProjectId)) === null || _a === void 0 ? void 0 :
-        _a.name), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4 } }, "Type"), React.createElement("select", { value: kdForm.type, onChange: e => setKdForm(p => (Object.assign(Object.assign({}, p), { type: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }, TRACKER_KD_TYPES.filter(t => isSenior || !t.seniorOnly).map(t => React.createElement("option", { key: t.value, value: t.value }, t.label)))), React.createElement("div", null, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4 } }, "Date"), React.createElement("input", { type: "date", value: kdForm.date, onChange: e => setKdForm(p => (Object.assign(Object.assign({}, p), { date: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }))), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } }, React.createElement("button", { onClick: () => setAddKdProjectId(null), style: btnSecondary() }, "Cancel"), React.createElement("button", { onClick: saveKd, disabled: saving || !kdForm.date, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: (!kdForm.date || saving) ? 0.5 : 1 }) }, "Save"))))), editProject && (React.createElement("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 100 }, onClick: () => setEditProject(null) }, React.createElement("div", { onClick: e => e.stopPropagation(), style: {
+        } })))))))), addKdProjectId && (React.createElement("div", { className: "bf-overlay", style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: () => setAddKdProjectId(null) }, React.createElement("div", { className: "bf-modal", onClick: e => e.stopPropagation(), style: { background: C.white, borderRadius: 6, padding: 28, width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' } }, React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 } }, "Set date \u2014 ", (_a = projects.find(p => p.id === addKdProjectId)) === null || _a === void 0 ? void 0 :
+        _a.name), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4 } }, "Type"), React.createElement("select", { value: kdForm.type, onChange: e => setKdForm(p => (Object.assign(Object.assign({}, p), { type: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }, TRACKER_KD_TYPES.filter(t => isSenior || !t.seniorOnly).map(t => React.createElement("option", { key: t.value, value: t.value }, t.label)))), React.createElement("div", null, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4 } }, "Date"), React.createElement("input", { type: "date", value: kdForm.date, onChange: e => setKdForm(p => (Object.assign(Object.assign({}, p), { date: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }))), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } }, React.createElement("button", { onClick: () => setAddKdProjectId(null), style: btnSecondary() }, "Cancel"), React.createElement("button", { onClick: saveKd, disabled: saving || !kdForm.date, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: (!kdForm.date || saving) ? 0.5 : 1 }) }, "Save"))))), editProject && (React.createElement("div", { className: "bf-overlay", style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 100 }, onClick: () => setEditProject(null) }, React.createElement("div", { onClick: e => e.stopPropagation(), style: {
             position: 'absolute', left: 0, top: 0, bottom: 0, width: 380,
             background: C.white, boxShadow: '4px 0 24px rgba(0,0,0,0.12)',
             display: 'flex', flexDirection: 'column',
@@ -1169,6 +1188,8 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             return { view: 'my-actions', meetingId: null, projectId: null };
         if (seg === 'tracker')
             return { view: 'live-tracker', meetingId: null, projectId: null };
+        if (seg === 'team')
+            return { view: 'team', meetingId: null, projectId: null };
         return { view: 'tracker', meetingId: null, projectId: null };
     };
     const writeHash = (view, meetingId, projectId) => {
@@ -1185,6 +1206,8 @@ function Dashboard({ user, profile, onProfileUpdated }) {
             h = '#/actions';
         else if (view === 'live-tracker')
             h = '#/tracker';
+        else if (view === 'team')
+            h = '#/team';
         if (window.location.hash !== h)
             window.location.hash = h;
     };
@@ -1207,6 +1230,12 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     useEffect(() => {
         writeHash(currentView, currentMeetingId, currentProjectId);
     }, [currentView, currentMeetingId, currentProjectId]);
+    // Route guard: the Team view is senior-only. A contributor landing on
+    // #/team (typed URL or stale link) is bounced to the projects home.
+    useEffect(() => {
+        if (currentView === 'team' && !isSenior)
+            setCurrentView('tracker');
+    }, [currentView, isSenior]); // eslint-disable-line react-hooks/exhaustive-deps
     // This ensures meetings list, notes, and actions are always current
     // regardless of what happened in previous views
     useEffect(() => {
@@ -1281,7 +1310,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     if (error) {
         return (React.createElement("div", { style: { minHeight: '100vh', background: C.bg, padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 6, maxWidth: 600, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load: ", error), React.createElement("button", { onClick: signOut, style: Object.assign(Object.assign({}, btnSecondary()), { marginTop: 16 }) }, "Sign out and retry")));
     }
-    return (React.createElement("div", { style: { minHeight: '100vh', background: '#F4F3F1', color: C.text } }, React.createElement("header", { style: { background: C.grip, borderBottom: `2px solid ${C.gripBorder}`, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 52 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', alignItems: 'center', lineHeight: 1, gap: 6 } }, React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "["), React.createElement("span", null, "bixframe"), React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "]")), React.createElement("nav", { style: { display: 'flex', gap: 2 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }, onMouseEnter: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)', onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.cordBright, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.cordBright, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: 'rgba(232,234,232,0.85)' } }, profile.display_name), React.createElement("span", { style: { fontSize: 10, color: 'rgba(232,234,232,0.4)' } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, style: { padding: '5px 12px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(232,234,232,0.5)', fontFamily: 'inherit', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 3, cursor: 'pointer' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } }))));
+    return (React.createElement("div", { style: { minHeight: '100vh', background: '#F4F3F1', color: C.text } }, React.createElement("header", { style: { background: C.grip, borderBottom: `2px solid ${C.gripBorder}`, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 52 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', alignItems: 'center', lineHeight: 1, gap: 6 } }, React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "["), React.createElement("span", null, "bixframe"), React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "]")), React.createElement("nav", { style: { display: 'flex', gap: 2 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), isSenior && React.createElement(ViewTab, { label: "Team", active: currentView === 'team', onClick: () => setCurrentView('team') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }, onMouseEnter: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)', onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.cordBright, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.cordBright, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: 'rgba(232,234,232,0.85)' } }, profile.display_name), React.createElement("span", { style: { fontSize: 10, color: 'rgba(232,234,232,0.4)' } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), React.createElement("button", { onClick: signOut, style: { padding: '5px 12px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(232,234,232,0.5)', fontFamily: 'inherit', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 3, cursor: 'pointer' } }, "Sign out")))), currentView === 'tracker' && (React.createElement(TrackerView, { projects: projects, filteredProjects: filteredProjects, users: users, latestNotes: latestNotes, keyDates: keyDates, isSenior: isSenior, currentUser: user, onKeyDatesChange: refreshKeyDates, projectActions: projectActions, projectFlags: projectFlags, onActionsChange: refreshProjectActions, onNavigate: (view) => setCurrentView(view), onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); }, updateProjectField: updateProjectField, saveStatus: saveStatus, search: search, setSearch: setSearch, statusFilter: statusFilter, setStatusFilter: setStatusFilter, ownerFilter: ownerFilter, setOwnerFilter: setOwnerFilter, statusCounts: statusCounts, distinctOwners: distinctOwners, onNewProject: () => setShowNewProject(true) })), currentView === 'meetings' && (React.createElement(MeetingsListView, { meetings: meetings, projects: projects, users: users, isSenior: isSenior, canSeePreCon: canSeePreCon, projectActions: projectActions, projectFlags: projectFlags, meetingEntrySummary: meetingEntrySummary, onOpen: openMeeting, onCreate: createMeeting, onDelete: deleteMeetingById })), currentView === 'meeting-detail' && currentMeetingId && (React.createElement(MeetingDetailView, { meetingId: currentMeetingId, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, canSeePreCon: canSeePreCon, latestNotes: latestNotes, keyDates: keyDates, onKeyDatesChange: refreshKeyDates, onBack: () => { setCurrentView('meetings'); setCurrentMeetingId(null); refreshLatestNotes(); refreshMeetings(); } })), currentView === 'project-dashboard' && currentProjectId && (React.createElement(ProjectDashboardView, { projectId: currentProjectId, projects: projects, users: users, latestNotes: latestNotes, keyDates: keyDates, projectActions: projectActions, projectFlags: projectFlags, isSenior: isSenior, currentUser: user, onSaveTeam: updateProjectField, onBack: () => { setCurrentProjectId(null); setCurrentView('tracker'); } })), currentView === 'my-actions' && (React.createElement(MyActionsView, { key: currentView, currentUser: user, profile: profile, projects: projects, users: users, onOpenMeeting: (id) => { setCurrentMeetingId(id); setCurrentView('meeting-detail'); } })), currentView === 'live-tracker' && (React.createElement(LiveTrackerView, { key: currentView, projects: projects, users: users, currentUser: user, profile: profile, isSenior: isSenior, keyDates: keyDates, onProjectUpdate: (id, field, value) => updateProjectField(id, field, value), onKeyDatesChange: refreshKeyDates, onProjectsRefresh: () => { } })), currentView === 'team' && isSenior && (React.createElement(TeamView, { key: currentView, currentUser: user, profile: profile, users: users, projects: projects, onOpenMeeting: openMeeting, onOpenProjectDashboard: (projectId) => { setCurrentProjectId(projectId); setCurrentView('project-dashboard'); } })), showNewProject && (React.createElement(NewProjectModal, { onClose: () => setShowNewProject(false), onCreate: createProject, users: users })), showProfile && (React.createElement(ProfileModal, { users: users, currentUser: user, profile: profile, isSenior: isSenior, targetUserId: profileTargetUserId, onSave: saveUserProfile, onSelectUser: (uid) => setProfileTargetUserId(uid), onClose: () => { setShowProfile(false); setProfileTargetUserId(null); } }))));
 }
 // ============================================================
 // KEY DATE URGENCY — colour logic based on days remaining
@@ -1368,7 +1397,7 @@ function timeAgo(dateStr) {
 // VIEW TAB (header navigation)
 // ============================================================
 function ViewTab({ label, active, onClick }) {
-    return (React.createElement("button", { onClick: onClick, style: {
+    return (React.createElement("button", { onClick: onClick, onMouseEnter: e => { if (!active) { e.currentTarget.style.color = 'rgba(232,234,232,0.75)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; } }, onMouseLeave: e => { if (!active) { e.currentTarget.style.color = 'rgba(232,234,232,0.4)'; e.currentTarget.style.background = 'transparent'; } }, style: {
             padding: '6px 14px',
             background: active ? 'rgba(93,191,176,0.07)' : 'transparent',
             color: active ? C.cordBright : 'rgba(232,234,232,0.4)',
@@ -2272,6 +2301,477 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
             : React.createElement(RaiseQueryForm, { users: (queryCtx && queryCtx.users) || users, currentUser: queryCtx && queryCtx.currentUser, onSubmit: async (text, targetId) => { await queryCtx.onRaiseQuery(action, text, targetId); setShowRaise(false); }, onCancel: () => setShowRaise(false) }))));
 }
 // ============================================================
+// TEAM VIEW — senior cross-team accountability (Phase 2b)
+// ============================================================
+// All actions across the org grouped by owner, with overdue and
+// at-risk surfacing, open-query overlays, and a hygiene bucket
+// for legacy unattributed actions (pre-Phase-5a fallback owners).
+// Senior-only: the tab is hidden from contributors and the route
+// is guarded in the app shell. Seniors get oversight plus light
+// interventions — assign an owner to unattributed work, adjust a
+// due date, and "nudge" (raise a query routed to the owner, via
+// the Phase 2c machinery). Closing stays owner-only, everywhere.
+// ============================================================
+const TEAM_RISK = {
+    overdue: { label: 'Overdue', fg: '#8A2A20', bg: '#FBE3E0', bar: '#B83A2E' },
+    soon: { label: 'Due soon', fg: '#9A5E08', bg: '#FEF3C7', bar: '#C47D11' },
+    track: { label: 'On track', fg: '#357A6E', bg: '#EAF4F2', bar: '#4A9B8E' },
+    nodate: { label: 'No date', fg: '#6B7270', bg: '#E2E0DD', bar: '#9BA3A0' },
+};
+const TEAM_RISK_ORDER = { overdue: 0, soon: 1, track: 2, nodate: 3 };
+function teamRiskOf(action, today, soonCutoff) {
+    if (!action.due_date)
+        return 'nodate';
+    if (action.due_date < today)
+        return 'overdue';
+    if (action.due_date <= soonCutoff)
+        return 'soon';
+    return 'track';
+}
+// Animated integer — eases up from the previous value. Respects
+// prefers-reduced-motion (jumps straight to the target).
+function useCountUp(value, duration = 700) {
+    const [display, setDisplay] = useState(0);
+    const fromRef = useRef(0);
+    useEffect(() => {
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduce || typeof requestAnimationFrame === 'undefined') {
+            fromRef.current = value;
+            setDisplay(value);
+            return;
+        }
+        const from = fromRef.current;
+        const start = performance.now();
+        let raf;
+        const tick = (now) => {
+            const t = Math.min(1, (now - start) / duration);
+            const eased = 1 - Math.pow(1 - t, 3);
+            setDisplay(Math.round(from + (value - from) * eased));
+            if (t < 1) {
+                raf = requestAnimationFrame(tick);
+            }
+            else {
+                fromRef.current = value;
+            }
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [value, duration]);
+    return display;
+}
+// Scroll reveal — adds .bf-in once the element enters the viewport.
+// Pairs with the .bf-reveal CSS (no-op under prefers-reduced-motion).
+function useReveal() {
+    const ref = useRef(null);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el)
+            return;
+        if (!('IntersectionObserver' in window)) {
+            el.classList.add('bf-in');
+            return;
+        }
+        const obs = new IntersectionObserver((entries) => {
+            entries.forEach(en => {
+                if (en.isIntersecting) {
+                    en.target.classList.add('bf-in');
+                    obs.unobserve(en.target);
+                }
+            });
+        }, { threshold: 0.08 });
+        obs.observe(el);
+        return () => obs.disconnect();
+    }, []);
+    return ref;
+}
+function TeamMetricTile({ label, value, accent, sub, delay }) {
+    const display = useCountUp(value);
+    const ref = useReveal();
+    return React.createElement("div", { ref: ref, className: "bf-reveal", style: { background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${accent}`, borderRadius: 4, padding: '14px 18px', flex: 1, minWidth: 150, transitionDelay: `${delay || 0}ms` } },
+        React.createElement("div", { style: { fontSize: 28, fontWeight: 700, color: accent, fontFamily: "'DM Mono', monospace", lineHeight: 1 } }, display),
+        React.createElement("div", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginTop: 8 } }, label),
+        sub && React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 3 } }, sub));
+}
+// Stacked risk-mix bar for one owner's open actions. Segment widths
+// ease out from zero on mount so the card "fills in" as it reveals.
+function TeamLoadBar({ counts }) {
+    const [grown, setGrown] = useState(false);
+    useEffect(() => {
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduce) {
+            setGrown(true);
+            return;
+        }
+        const raf = requestAnimationFrame(() => requestAnimationFrame(() => setGrown(true)));
+        return () => cancelAnimationFrame(raf);
+    }, []);
+    const total = counts.overdue + counts.soon + counts.track + counts.nodate;
+    if (total === 0)
+        return React.createElement("div", { style: { height: 5, borderRadius: 3, background: C.line } });
+    const seg = (key) => counts[key] === 0 ? null : React.createElement("div", { key: key, title: `${counts[key]} ${TEAM_RISK[key].label.toLowerCase()}`, style: { width: grown ? `${(counts[key] / total) * 100}%` : '0%', background: TEAM_RISK[key].bar, transition: 'width 0.6s cubic-bezier(0.3, 0.7, 0.4, 1)' } });
+    return React.createElement("div", { style: { height: 5, borderRadius: 3, background: C.line, display: 'flex', overflow: 'hidden' } }, ['overdue', 'soon', 'track', 'nodate'].map(seg));
+}
+// Senior nudge — raises a Phase 2c query routed straight at the
+// action's owner. Blocked (button hidden upstream) when the action
+// already has an open query, matching the one-open-query rule.
+function TeamNudgeForm({ action, owner, currentUser, onDone, onCancel }) {
+    const [text, setText] = useState('');
+    const [busy, setBusy] = useState(false);
+    const ready = text.trim().length > 0 && !busy;
+    const firstName = (owner.display_name || '').split(' ')[0] || 'them';
+    const submit = async () => {
+        if (!ready)
+            return;
+        setBusy(true);
+        try {
+            const { data, error } = await sb.from('action_queries')
+                .insert({ org_id: action.org_id, action_id: action.id, raised_by: currentUser.id, target_user_id: owner.id, query_text: text.trim() })
+                .select().single();
+            if (error)
+                throw error;
+            onDone(data);
+        }
+        catch (e) {
+            alert('Could not send the nudge: ' + e.message);
+            setBusy(false);
+        }
+    };
+    return React.createElement("div", { style: { marginTop: 8, background: C.cordSoft, border: `1px solid ${C.cordMid}`, borderRadius: 4, padding: 10 } },
+        React.createElement("div", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.cord, marginBottom: 6 } }, "Nudge ", owner.display_name),
+        React.createElement("textarea", { value: text, onChange: e => setText(e.target.value), placeholder: `Ask ${firstName} for an update…`, rows: 2, autoFocus: true, style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', boxSizing: 'border-box', fontSize: 12, resize: 'vertical', marginBottom: 8 }) }),
+        React.createElement("div", { style: { display: 'flex', gap: 6, justifyContent: 'flex-end' } },
+            React.createElement("button", { onClick: onCancel, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel"),
+            React.createElement("button", { onClick: submit, disabled: !ready, style: Object.assign(Object.assign({}, btnPrimary()), { background: C.cord, fontSize: 11, opacity: ready ? 1 : 0.4, cursor: ready ? 'pointer' : 'not-allowed' }) }, busy ? 'Sending…' : 'Send nudge')));
+}
+// One action row inside an owner card (or the unattributed bucket).
+function TeamActionRow({ action, project, meeting, owner, currentUser, today, soonCutoff, openQuery, users, collaborators, onOpenMeeting, onOpenProject, onDueDateSaved, onNudged }) {
+    const [editingDue, setEditingDue] = useState(false);
+    const [nudging, setNudging] = useState(false);
+    const [savingDue, setSavingDue] = useState(false);
+    const isClosed = action.status !== 'open';
+    const risk = isClosed ? null : teamRiskOf(action, today, soonCutoff);
+    const riskCfg = risk ? TEAM_RISK[risk] : null;
+    const dueDays = action.due_date ? Math.round((new Date(action.due_date + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000) : null;
+    const riskLabel = !riskCfg ? '' :
+        risk === 'overdue' ? `Overdue ${humanRemaining(dueDays)}` :
+            risk === 'soon' ? (dueDays === 0 ? 'Due today' : `Due in ${humanRemaining(dueDays)}`) :
+                risk === 'track' ? `Due ${formatMeetingDate(action.due_date)}` : 'No due date';
+    const saveDue = async (v) => {
+        const next = v || null;
+        if (next === action.due_date) {
+            setEditingDue(false);
+            return;
+        }
+        setSavingDue(true);
+        try {
+            const { error } = await sb.from('actions').update({ due_date: next }).eq('id', action.id);
+            if (error)
+                throw error;
+            onDueDateSaved(action.id, next);
+        }
+        catch (e) {
+            alert('Could not update the due date: ' + e.message);
+        }
+        setSavingDue(false);
+        setEditingDue(false);
+    };
+    const nameOf = (id) => {
+        const u = (users || []).find(x => x.id === id);
+        return u ? u.display_name : 'someone';
+    };
+    return React.createElement("div", { style: { borderBottom: `1px solid ${C.line}`, padding: '10px 14px', opacity: isClosed ? 0.55 : 1 } },
+        React.createElement("div", { style: { display: 'flex', alignItems: 'flex-start', gap: 10 } },
+            isClosed
+                ? React.createElement("span", { title: action.completed_at ? `Closed ${formatMeetingDate(action.completed_at.slice(0, 10))}` : 'Closed', style: { width: 16, height: 16, borderRadius: '50%', background: C.greenLight, color: C.green, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 } }, "✓")
+                : React.createElement("span", { style: { width: 8, height: 8, borderRadius: '50%', background: riskCfg.bar, flexShrink: 0, marginTop: 6, boxShadow: risk === 'overdue' ? `0 0 0 3px ${riskCfg.bg}` : 'none' } }),
+            React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                React.createElement("div", { style: { fontSize: 12.5, color: C.text, lineHeight: 1.45, textDecoration: isClosed ? 'line-through' : 'none' } }, action.description),
+                React.createElement("div", { style: { fontSize: 10.5, color: C.muted, marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' } },
+                    riskCfg && React.createElement("span", { style: { color: riskCfg.fg, background: riskCfg.bg, fontWeight: 700, padding: '1px 7px', borderRadius: 8, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.05em' } }, riskLabel),
+                    isClosed && React.createElement("span", { style: { color: C.green, fontWeight: 600 } }, "Closed", action.completed_at ? ` ${timeAgo(action.completed_at)}` : ''),
+                    project && React.createElement("button", { onClick: () => onOpenProject(project.id), title: "Open project dashboard", style: { background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 10.5, color: C.cord, fontWeight: 700, fontFamily: 'inherit' } }, "#", project.project_number, " ", project.name),
+                    meeting && React.createElement("button", { onClick: () => onOpenMeeting(meeting.id), title: "Open source meeting", style: { background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 10.5, color: C.muted, textDecoration: 'underline', fontFamily: 'inherit' } }, "from ", (MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }).short, " · ", formatMeetingDate(meeting.meeting_date)),
+                    collaborators && collaborators.length > 0 && React.createElement("span", { title: `With ${collaborators.map(u => u.display_name).join(', ')}`, style: { color: C.mist } }, "+", collaborators.map(u => u.initials || '?').join(' ')),
+                    !isClosed && owner && React.createElement("span", { style: { marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' } },
+                        editingDue
+                            ? React.createElement("input", { type: "date", defaultValue: action.due_date || '', autoFocus: true, disabled: savingDue, onBlur: e => saveDue(e.target.value), onKeyDown: e => { if (e.key === 'Enter') saveDue(e.target.value); if (e.key === 'Escape') setEditingDue(false); }, style: Object.assign(Object.assign({}, inputStyle()), { fontSize: 11, padding: '2px 6px' }) })
+                            : React.createElement("button", { onClick: () => setEditingDue(true), title: "Change due date", style: { background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 10, color: C.mist, textDecoration: 'underline', fontFamily: 'inherit' } }, action.due_date ? 'Edit due date' : 'Set due date'),
+                        !openQuery && !nudging && React.createElement("button", { onClick: () => setNudging(true), title: "Raise a query routed to the owner", style: { background: 'transparent', border: `1px solid ${C.cordMid}`, borderRadius: 3, padding: '2px 9px', cursor: 'pointer', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.cord, fontFamily: 'inherit' } }, "Nudge"))))),
+        openQuery && React.createElement("div", { style: { marginTop: 8, marginLeft: 18, background: '#FFFBF2', border: `1px solid ${C.amber}`, borderLeft: `3px solid ${C.amber}`, borderRadius: 4, padding: '8px 10px' } },
+            React.createElement("div", { style: { fontSize: 11.5, color: C.text, lineHeight: 1.4 } }, "⚑ ", openQuery.query_text),
+            React.createElement("div", { style: { fontSize: 10, color: C.muted, marginTop: 3 } }, nameOf(openQuery.raised_by), " → ", nameOf(openQuery.target_user_id), " · ", formatRelative(openQuery.raised_at), " · awaiting answer")),
+        nudging && owner && React.createElement("div", { style: { marginLeft: 18 } }, React.createElement(TeamNudgeForm, { action: action, owner: owner, currentUser: currentUser, onCancel: () => setNudging(false), onDone: (q) => { setNudging(false); onNudged(q); } })));
+}
+// One owner's card — counts, risk-mix bar, expandable action list.
+function TeamOwnerCard({ owner, rows, closedRows, showClosed, queriesByAction, waitingOnOwner, expanded, onToggle, idx, projectById, meetingById, collaboratorsByAction, currentUser, users, today, soonCutoff, onOpenMeeting, onOpenProject, onDueDateSaved, onNudged }) {
+    const ref = useReveal();
+    const counts = { overdue: 0, soon: 0, track: 0, nodate: 0 };
+    rows.forEach(a => { counts[teamRiskOf(a, today, soonCutoff)] += 1; });
+    const deptLabel = owner.department ? (MEETING_TYPES[owner.department] || { short: owner.department }).short : null;
+    const sorted = [...rows].sort((a, b) => {
+        const ra = TEAM_RISK_ORDER[teamRiskOf(a, today, soonCutoff)];
+        const rb = TEAM_RISK_ORDER[teamRiskOf(b, today, soonCutoff)];
+        if (ra !== rb)
+            return ra - rb;
+        return (a.due_date || '9999').localeCompare(b.due_date || '9999');
+    });
+    const visibleClosed = showClosed ? [...closedRows].sort((a, b) => (b.completed_at || '').localeCompare(a.completed_at || '')) : [];
+    const renderRow = (a) => React.createElement(TeamActionRow, { key: a.id, action: a, project: projectById[a.project_id], meeting: meetingById[a.meeting_id], owner: owner, currentUser: currentUser, today: today, soonCutoff: soonCutoff, openQuery: queriesByAction[a.id], users: users, collaborators: collaboratorsByAction[a.id], onOpenMeeting: onOpenMeeting, onOpenProject: onOpenProject, onDueDateSaved: onDueDateSaved, onNudged: onNudged });
+    return React.createElement("div", { ref: ref, className: "bf-reveal bf-lift", style: { background: C.white, border: `1px solid ${counts.overdue > 0 ? '#E8A89F' : C.line}`, borderRadius: 5, overflow: 'hidden', transitionDelay: `${Math.min(idx, 8) * 50}ms`, boxShadow: expanded ? '0 8px 28px rgba(28,31,30,0.10)' : '0 1px 3px rgba(28,31,30,0.04)' } },
+        React.createElement("button", { onClick: onToggle, style: { display: 'flex', alignItems: 'center', gap: 14, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '14px 18px', cursor: 'pointer', fontFamily: 'inherit' } },
+            React.createElement("span", { style: { width: 36, height: 36, borderRadius: '50%', background: counts.overdue > 0 ? '#FBE3E0' : C.cordSoft, color: counts.overdue > 0 ? '#8A2A20' : C.cord, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: "'DM Mono', monospace" } }, owner.initials || '?'),
+            React.createElement("span", { style: { flex: 1, minWidth: 0 } },
+                React.createElement("span", { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+                    React.createElement("span", { style: { fontSize: 14, fontWeight: 600, color: C.ink } }, owner.display_name),
+                    deptLabel && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: C.cord, background: C.cordSoft, padding: '1px 8px', borderRadius: 8, textTransform: 'uppercase', letterSpacing: '0.06em' } }, deptLabel),
+                    owner.role === 'senior' && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: C.muted, background: C.bg, border: `1px solid ${C.line}`, padding: '1px 8px', borderRadius: 8, textTransform: 'uppercase', letterSpacing: '0.06em' } }, "Senior"),
+                    waitingOnOwner > 0 && React.createElement("span", { title: `${waitingOnOwner} open ${waitingOnOwner === 1 ? 'query' : 'queries'} waiting on ${owner.display_name}`, style: { fontSize: 9.5, fontWeight: 700, color: '#9A5E08', background: '#FEF3C7', padding: '1px 8px', borderRadius: 8 } }, "⚑ ", waitingOnOwner, " waiting")),
+                React.createElement("span", { style: { display: 'block', marginTop: 8, maxWidth: 420 } }, React.createElement(TeamLoadBar, { counts: counts }))),
+            React.createElement("span", { style: { textAlign: 'right', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16 } },
+                React.createElement("span", null,
+                    React.createElement("span", { style: { display: 'block', fontSize: 16, fontWeight: 700, color: counts.overdue > 0 ? C.redStatus : C.text, fontFamily: "'DM Mono', monospace" } }, rows.length),
+                    React.createElement("span", { style: { display: 'block', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted } }, "open")),
+                counts.overdue > 0 && React.createElement("span", { style: { fontSize: 10, fontWeight: 700, color: '#8A2A20', background: '#FBE3E0', padding: '3px 9px', borderRadius: 10 } }, counts.overdue, " overdue"),
+                React.createElement("span", { "aria-hidden": true, style: { color: C.mist, fontSize: 11, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s cubic-bezier(0.3, 0.7, 0.4, 1)', display: 'inline-block' } }, "▼"))),
+        React.createElement("div", { style: { display: 'grid', gridTemplateRows: expanded ? '1fr' : '0fr', transition: 'grid-template-rows 0.32s cubic-bezier(0.3, 0.7, 0.4, 1)' } },
+            React.createElement("div", { style: { overflow: 'hidden', minHeight: 0 } },
+                React.createElement("div", { style: { borderTop: `1px solid ${C.line}`, background: '#FBFAF9' } },
+                    sorted.map(renderRow),
+                    rows.length === 0 && React.createElement("div", { style: { padding: '14px 18px', fontSize: 12, color: C.muted, fontStyle: 'italic' } }, "Nothing open."),
+                    showClosed && visibleClosed.map(renderRow),
+                    !showClosed && closedRows.length > 0 && React.createElement("div", { style: { padding: '8px 18px', fontSize: 10.5, color: C.mist } }, closedRows.length, " closed action", closedRows.length === 1 ? '' : 's', " hidden · use “Show closed” above to include them")))));
+}
+// Hygiene bucket — actions with no app_users owner (legacy free-text
+// fallbacks from before Phase 5a strict mode). Seniors assign a real
+// owner inline; the row then migrates to that owner's card.
+function TeamUnattributedCard({ rows, users, idx, projectById, meetingById, today, soonCutoff, onAssigned, onOpenMeeting, onOpenProject }) {
+    const ref = useReveal();
+    const [assigning, setAssigning] = useState(null); // action id with picker open
+    const [busy, setBusy] = useState(false);
+    const assign = async (action, userId) => {
+        if (!userId)
+            return;
+        setBusy(true);
+        try {
+            const { error } = await sb.from('actions').update({ owner_user_id: userId, owner_name_fallback: null }).eq('id', action.id);
+            if (error)
+                throw error;
+            onAssigned(action.id, userId);
+        }
+        catch (e) {
+            alert('Could not assign the owner: ' + e.message);
+        }
+        setBusy(false);
+        setAssigning(null);
+    };
+    if (rows.length === 0)
+        return null;
+    return React.createElement("div", { ref: ref, className: "bf-reveal", style: { background: C.grip, border: `1px solid ${C.gripBorder}`, borderRadius: 5, overflow: 'hidden', transitionDelay: `${Math.min(idx, 8) * 50}ms` } },
+        React.createElement("div", { style: { padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12 } },
+            React.createElement("span", { style: { width: 36, height: 36, borderRadius: '50%', background: 'rgba(196,125,17,0.18)', color: '#E8B45C', fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } }, "?"),
+            React.createElement("div", { style: { flex: 1 } },
+                React.createElement("div", { style: { fontSize: 14, fontWeight: 600, color: C.fog } }, "Unattributed actions"),
+                React.createElement("div", { style: { fontSize: 11, color: 'rgba(232,234,232,0.55)', marginTop: 2 } }, "No accountable owner on record — assign one so this work can't fall through the cracks.")),
+            React.createElement("span", { style: { fontSize: 16, fontWeight: 700, color: '#E8B45C', fontFamily: "'DM Mono', monospace" } }, rows.length)),
+        React.createElement("div", { style: { background: C.white, borderTop: `2px solid ${C.amber}` } }, rows.map(a => {
+            const risk = teamRiskOf(a, today, soonCutoff);
+            const riskCfg = TEAM_RISK[risk];
+            const project = projectById[a.project_id];
+            const meeting = meetingById[a.meeting_id];
+            return React.createElement("div", { key: a.id, style: { borderBottom: `1px solid ${C.line}`, padding: '10px 14px' } },
+                React.createElement("div", { style: { display: 'flex', alignItems: 'flex-start', gap: 10 } },
+                    React.createElement("span", { style: { width: 8, height: 8, borderRadius: '50%', background: riskCfg.bar, flexShrink: 0, marginTop: 6 } }),
+                    React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                        React.createElement("div", { style: { fontSize: 12.5, color: C.text, lineHeight: 1.45 } }, a.description),
+                        React.createElement("div", { style: { fontSize: 10.5, color: C.muted, marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' } },
+                            React.createElement("span", { style: { color: riskCfg.fg, background: riskCfg.bg, fontWeight: 700, padding: '1px 7px', borderRadius: 8, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.05em' } }, a.due_date ? `${TEAM_RISK[risk].label} · ${formatMeetingDate(a.due_date)}` : 'No due date'),
+                            a.owner_name_fallback && React.createElement("span", { style: { fontStyle: 'italic' } }, "was: “", a.owner_name_fallback, "”"),
+                            project && React.createElement("button", { onClick: () => onOpenProject(project.id), style: { background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 10.5, color: C.cord, fontWeight: 700, fontFamily: 'inherit' } }, "#", project.project_number, " ", project.name),
+                            meeting && React.createElement("button", { onClick: () => onOpenMeeting(meeting.id), style: { background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 10.5, color: C.muted, textDecoration: 'underline', fontFamily: 'inherit' } }, "from ", (MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }).short))),
+                    assigning !== a.id && React.createElement("button", { onClick: () => setAssigning(a.id), style: { background: C.cord, color: '#fff', border: 'none', borderRadius: 3, padding: '4px 12px', cursor: 'pointer', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'inherit', flexShrink: 0 } }, "Assign owner")),
+                assigning === a.id && React.createElement("div", { style: { marginTop: 8, marginLeft: 18, maxWidth: 360, opacity: busy ? 0.5 : 1 } },
+                    React.createElement(UserPickerField, { users: users, value: null, onChange: (uid) => assign(a, uid), required: true }),
+                    React.createElement("button", { onClick: () => setAssigning(null), style: { marginTop: 6, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 10.5, color: C.mist, textDecoration: 'underline', fontFamily: 'inherit' } }, "Cancel")));
+        })));
+}
+function TeamView({ currentUser, profile, users, projects, onOpenMeeting, onOpenProjectDashboard }) {
+    const [actions, setActions] = useState([]);
+    const [queries, setQueries] = useState([]);
+    const [assignees, setAssignees] = useState([]);
+    const [meetings, setMeetings] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [deptFilter, setDeptFilter] = useState('all');
+    const [showClosed, setShowClosed] = useState(false);
+    const [expandedOwner, setExpandedOwner] = useState(null);
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                const [aRes, qRes, cRes, mRes] = await Promise.all([
+                    sb.from('actions').select('*'),
+                    sb.from('action_queries').select('*').is('answered_at', null),
+                    sb.from('action_assignees').select('action_id, user_id'),
+                    sb.from('meetings').select('id, meeting_type, meeting_date'),
+                ]);
+                if (!mounted)
+                    return;
+                if (aRes.error)
+                    throw aRes.error;
+                setActions(aRes.data || []);
+                setQueries((qRes.data) || []);
+                setAssignees((cRes.data) || []);
+                setMeetings((mRes.data) || []);
+                setLoading(false);
+            }
+            catch (e) {
+                if (mounted) {
+                    setError(e.message);
+                    setLoading(false);
+                }
+            }
+        })();
+        return () => { mounted = false; };
+    }, []);
+    const today = new Date().toISOString().slice(0, 10);
+    const soonCutoff = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const projectById = useMemo(() => {
+        const m = {};
+        (projects || []).forEach(p => { m[p.id] = p; });
+        return m;
+    }, [projects]);
+    const meetingById = useMemo(() => {
+        const m = {};
+        meetings.forEach(x => { m[x.id] = Object.assign(Object.assign({}, x), { meeting_type: x.meeting_type === 'master-resource' ? 'pre-con' : x.meeting_type }); });
+        return m;
+    }, [meetings]);
+    const userById = useMemo(() => {
+        const m = {};
+        (users || []).forEach(u => { m[u.id] = u; });
+        return m;
+    }, [users]);
+    const queriesByAction = useMemo(() => {
+        const m = {};
+        queries.forEach(q => { m[q.action_id] = q; });
+        return m;
+    }, [queries]);
+    const collaboratorsByAction = useMemo(() => {
+        const m = {};
+        assignees.forEach(r => {
+            const u = userById[r.user_id];
+            if (!u)
+                return;
+            if (!m[r.action_id])
+                m[r.action_id] = [];
+            m[r.action_id].push(u);
+        });
+        return m;
+    }, [assignees, userById]);
+    // Group actions per owner; anything without a resolvable app_users
+    // owner lands in the unattributed bucket.
+    const grouped = useMemo(() => {
+        const open = {};
+        const closed = {};
+        const unattributed = [];
+        actions.forEach(a => {
+            const owner = a.owner_user_id ? userById[a.owner_user_id] : null;
+            if (!owner) {
+                if (a.status === 'open')
+                    unattributed.push(a);
+                return;
+            }
+            const bucket = a.status === 'open' ? open : closed;
+            if (!bucket[owner.id])
+                bucket[owner.id] = [];
+            bucket[owner.id].push(a);
+        });
+        unattributed.sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'));
+        return { open, closed, unattributed };
+    }, [actions, userById]);
+    const waitingByOwner = useMemo(() => {
+        const m = {};
+        queries.forEach(q => {
+            if (q.target_user_id)
+                m[q.target_user_id] = (m[q.target_user_id] || 0) + 1;
+        });
+        return m;
+    }, [queries]);
+    // Owners ranked most-at-risk first; people with nothing on their
+    // plate drop to the all-clear strip at the bottom.
+    const rankedOwners = useMemo(() => {
+        const score = (u) => {
+            const rows = grouped.open[u.id] || [];
+            let overdue = 0, soon = 0;
+            rows.forEach(a => {
+                const r = teamRiskOf(a, today, soonCutoff);
+                if (r === 'overdue')
+                    overdue += 1;
+                else if (r === 'soon')
+                    soon += 1;
+            });
+            return { overdue, soon, open: rows.length };
+        };
+        const withWork = (users || []).filter(u => (grouped.open[u.id] || []).length > 0 || (grouped.closed[u.id] || []).length > 0);
+        return withWork
+            .map(u => Object.assign({ user: u }, score(u)))
+            .sort((a, b) => b.overdue - a.overdue || b.soon - a.soon || b.open - a.open || (a.user.display_name || '').localeCompare(b.user.display_name || ''));
+    }, [users, grouped, today, soonCutoff]);
+    const allClear = useMemo(() => (users || []).filter(u => !(grouped.open[u.id] || []).length && !(grouped.closed[u.id] || []).length), [users, grouped]);
+    const departments = useMemo(() => {
+        const seen = new Set();
+        rankedOwners.forEach(r => { if (r.user.department) seen.add(r.user.department); });
+        return [...seen].sort();
+    }, [rankedOwners]);
+    const visibleOwners = deptFilter === 'all' ? rankedOwners : rankedOwners.filter(r => r.user.department === deptFilter);
+    // Org-wide metrics (unfiltered — the headline is the whole org).
+    const metrics = useMemo(() => {
+        let open = 0, overdue = 0, dueWeek = 0;
+        actions.forEach(a => {
+            if (a.status !== 'open')
+                return;
+            open += 1;
+            const r = teamRiskOf(a, today, soonCutoff);
+            if (r === 'overdue')
+                overdue += 1;
+            else if (r === 'soon')
+                dueWeek += 1;
+        });
+        return { open, overdue, dueWeek, queries: queries.length };
+    }, [actions, queries, today, soonCutoff]);
+    const onDueDateSaved = (actionId, due) => setActions(prev => prev.map(a => a.id === actionId ? Object.assign(Object.assign({}, a), { due_date: due }) : a));
+    const onNudged = (q) => setQueries(prev => [...prev, q]);
+    const onAssigned = (actionId, userId) => setActions(prev => prev.map(a => a.id === actionId ? Object.assign(Object.assign({}, a), { owner_user_id: userId, owner_name_fallback: null }) : a));
+    const openProject = (projectId) => onOpenProjectDashboard(projectId);
+    if (loading)
+        return React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto', padding: '60px 28px', textAlign: 'center', fontSize: 13, color: C.muted } }, "Loading team view…");
+    if (error)
+        return React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto', padding: 40 } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 6, borderLeft: `3px solid ${C.redStatus}`, fontSize: 13 } }, "Couldn't load the team view: ", error));
+    const chip = (value, label) => React.createElement("button", { key: value, onClick: () => setDeptFilter(value), style: { padding: '5px 13px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${deptFilter === value ? C.cord : C.line}`, background: deptFilter === value ? C.cord : C.white, color: deptFilter === value ? '#fff' : C.muted } }, label);
+    return React.createElement("div", { style: { maxWidth: 1100, margin: '0 auto', padding: '24px 28px 80px' } },
+        React.createElement("div", { style: { marginBottom: 18 } },
+            React.createElement("h1", { style: { margin: 0, fontSize: 21, fontWeight: 700, color: C.ink, letterSpacing: '0.01em' } }, "Team accountability"),
+            React.createElement("div", { style: { fontSize: 12.5, color: C.muted, marginTop: 4 } }, "Every open action across the org, grouped by the person on the hook for it. Only owners close actions — nudge instead.")),
+        React.createElement("div", { style: { display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 22 } },
+            React.createElement(TeamMetricTile, { label: "Open actions", value: metrics.open, accent: C.cord, delay: 0 }),
+            React.createElement(TeamMetricTile, { label: "Overdue", value: metrics.overdue, accent: C.redStatus, sub: metrics.overdue > 0 ? 'needs attention' : 'all caught up', delay: 60 }),
+            React.createElement(TeamMetricTile, { label: "Due this week", value: metrics.dueWeek, accent: C.amber, delay: 120 }),
+            React.createElement(TeamMetricTile, { label: "Open queries", value: metrics.queries, accent: '#357A6E', sub: 'awaiting answers', delay: 180 })),
+        React.createElement("div", { style: { position: 'sticky', top: 52, zIndex: 5, background: C.bg, padding: '10px 0', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', borderBottom: `1px solid ${C.line}` } },
+            chip('all', 'All teams'),
+            departments.map(d => chip(d, (MEETING_TYPES[d] || { short: d }).short)),
+            React.createElement("label", { style: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.muted, cursor: 'pointer', userSelect: 'none' } },
+                React.createElement("input", { type: "checkbox", checked: showClosed, onChange: e => setShowClosed(e.target.checked), style: { accentColor: C.cord, cursor: 'pointer' } }),
+                "Show closed")),
+        React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+            visibleOwners.map((r, idx) => React.createElement(TeamOwnerCard, { key: r.user.id, owner: r.user, rows: grouped.open[r.user.id] || [], closedRows: grouped.closed[r.user.id] || [], showClosed: showClosed, queriesByAction: queriesByAction, waitingOnOwner: waitingByOwner[r.user.id] || 0, expanded: expandedOwner === r.user.id, onToggle: () => setExpandedOwner(expandedOwner === r.user.id ? null : r.user.id), idx: idx, projectById: projectById, meetingById: meetingById, collaboratorsByAction: collaboratorsByAction, currentUser: currentUser, users: users, today: today, soonCutoff: soonCutoff, onOpenMeeting: onOpenMeeting, onOpenProject: openProject, onDueDateSaved: onDueDateSaved, onNudged: onNudged })),
+            visibleOwners.length === 0 && React.createElement("div", { style: { padding: 30, textAlign: 'center', fontSize: 13, color: C.muted, fontStyle: 'italic' } }, "No one in this team has actions on the books."),
+            deptFilter === 'all' && React.createElement(TeamUnattributedCard, { rows: grouped.unattributed, users: users, idx: visibleOwners.length, projectById: projectById, meetingById: meetingById, today: today, soonCutoff: soonCutoff, onAssigned: onAssigned, onOpenMeeting: onOpenMeeting, onOpenProject: openProject })),
+        deptFilter === 'all' && allClear.length > 0 && React.createElement("div", { style: { marginTop: 22, padding: '12px 16px', background: C.white, border: `1px dashed ${C.line}`, borderRadius: 5, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+            React.createElement("span", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.green } }, "✓ All clear"),
+            allClear.map(u => React.createElement("span", { key: u.id, title: u.display_name, style: { fontSize: 11, color: C.muted } },
+                React.createElement("strong", { style: { color: C.cord, fontWeight: 700, marginRight: 4 } }, u.initials || '?'), u.display_name))));
+}
+// ============================================================
 // USER PICKER FIELD — reusable single-user dropdown
 // Used by NewProjectModal and the project Team tab.
 // Filtering: soft. Matching department surfaces at the top,
@@ -2500,7 +3000,7 @@ function NewProjectModal({ onClose, onCreate, users }) {
             setBusy(false);
         }
     };
-    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 560 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "New project"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Project name *" }, React.createElement("input", { value: form.name, onChange: handle('name'), required: true, style: inputStyle(), autoFocus: true })), React.createElement(Field, { label: "Project number *" }, React.createElement("input", { value: form.project_number, onChange: handle('project_number'), required: true, style: inputStyle(), placeholder: "e.g. 26342" })), React.createElement(Field, { label: "Address" }, React.createElement("input", { value: form.address, onChange: handle('address'), style: inputStyle(), placeholder: "e.g. 14 Wardour Street, London W1D 6QE" })), React.createElement(Field, { label: "Status" }, React.createElement("select", { value: form.status, onChange: handle('status'), style: inputStyle() }, STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label)))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Owner" }, React.createElement(UserPickerField, { users: users, value: form.owner_user_id, onChange: setUser('owner_user_id'), department: null, required: true, allowClear: false })), React.createElement(Field, { label: "Pre-Con Lead" }, React.createElement(UserPickerField, { users: users, value: form.pre_con_lead_user_id, onChange: setUser('pre_con_lead_user_id'), department: 'pre-con', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Designer" }, React.createElement(UserPickerField, { users: users, value: form.designer_user_id, onChange: setUser('designer_user_id'), department: 'design', allowClear: true })), React.createElement(Field, { label: "Technical Designer" }, React.createElement(UserPickerField, { users: users, value: form.technical_designer_user_id, onChange: setUser('technical_designer_user_id'), department: 'technical', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Project Manager" }, React.createElement(UserPickerField, { users: users, value: form.project_manager_user_id, onChange: setUser('project_manager_user_id'), department: 'pm', allowClear: true })), React.createElement(Field, { label: "Furniture Consultant" }, React.createElement(UserPickerField, { users: users, value: form.furniture_consultant_user_id, onChange: setUser('furniture_consultant_user_id'), department: 'furniture', allowClear: true }))), error && React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 10, borderRadius: 4, fontSize: 13, marginBottom: 14, borderLeft: `3px solid ${C.redStatus}` } }, error), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Creating…' : 'Create project'))))));
+    return (React.createElement("div", { className: "bf-overlay", onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { className: "bf-modal", onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 560 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "New project"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Project name *" }, React.createElement("input", { value: form.name, onChange: handle('name'), required: true, style: inputStyle(), autoFocus: true })), React.createElement(Field, { label: "Project number *" }, React.createElement("input", { value: form.project_number, onChange: handle('project_number'), required: true, style: inputStyle(), placeholder: "e.g. 26342" })), React.createElement(Field, { label: "Address" }, React.createElement("input", { value: form.address, onChange: handle('address'), style: inputStyle(), placeholder: "e.g. 14 Wardour Street, London W1D 6QE" })), React.createElement(Field, { label: "Status" }, React.createElement("select", { value: form.status, onChange: handle('status'), style: inputStyle() }, STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label)))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Owner" }, React.createElement(UserPickerField, { users: users, value: form.owner_user_id, onChange: setUser('owner_user_id'), department: null, required: true, allowClear: false })), React.createElement(Field, { label: "Pre-Con Lead" }, React.createElement(UserPickerField, { users: users, value: form.pre_con_lead_user_id, onChange: setUser('pre_con_lead_user_id'), department: 'pre-con', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Designer" }, React.createElement(UserPickerField, { users: users, value: form.designer_user_id, onChange: setUser('designer_user_id'), department: 'design', allowClear: true })), React.createElement(Field, { label: "Technical Designer" }, React.createElement(UserPickerField, { users: users, value: form.technical_designer_user_id, onChange: setUser('technical_designer_user_id'), department: 'technical', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Project Manager" }, React.createElement(UserPickerField, { users: users, value: form.project_manager_user_id, onChange: setUser('project_manager_user_id'), department: 'pm', allowClear: true })), React.createElement(Field, { label: "Furniture Consultant" }, React.createElement(UserPickerField, { users: users, value: form.furniture_consultant_user_id, onChange: setUser('furniture_consultant_user_id'), department: 'furniture', allowClear: true }))), error && React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 10, borderRadius: 4, fontSize: 13, marginBottom: 14, borderLeft: `3px solid ${C.redStatus}` } }, error), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Creating…' : 'Create project'))))));
 }
 // ============================================================
 // PROFILE MODAL — edit display name & initials (and more for seniors)
@@ -2577,7 +3077,7 @@ function ProfileModal({ users, currentUser, profile, isSenior, targetUserId, onS
     const handleBackdropMouseDown = (e) => { backdropDownRef.current = (e.target === e.currentTarget); };
     const handleBackdropClick = (e) => { if (backdropDownRef.current && e.target === e.currentTarget)
         onClose(); backdropDownRef.current = false; };
-    return (React.createElement("div", { onMouseDown: handleBackdropMouseDown, onClick: handleBackdropClick, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.45)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), onMouseDown: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 460, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, isSelf ? "Your Profile" : "Edit Profile"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 18 } }, isSelf ? "Update how your name and initials appear across BixFrame." : `Editing ${(target && target.display_name) || '\u2014'}`), 
+    return (React.createElement("div", { className: "bf-overlay", onMouseDown: handleBackdropMouseDown, onClick: handleBackdropClick, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.45)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { className: "bf-drawer", onClick: (e) => e.stopPropagation(), onMouseDown: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 460, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, isSelf ? "Your Profile" : "Edit Profile"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 18 } }, isSelf ? "Update how your name and initials appear across BixFrame." : `Editing ${(target && target.display_name) || '\u2014'}`), 
     // Senior-only: switch which user is being edited
     canEditOthers && React.createElement("div", { style: { marginBottom: 16, padding: 10, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4 } }, React.createElement("label", { style: { display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 6 } }, "Edit which user"), React.createElement("select", { value: editingId || '', onChange: e => onSelectUser(e.target.value === (currentUser && currentUser.id) ? null : e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', fontSize: 13 }) }, users.slice().sort((a, b) => (a.display_name || '').localeCompare(b.display_name || '')).map(u => (React.createElement("option", { key: u.id, value: u.id }, u.display_name, u.id === (currentUser && currentUser.id) ? ' (you)' : ''))))), React.createElement("div", { style: { marginBottom: 14 } }, React.createElement("label", { style: { display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 6 } }, "Display name"), React.createElement("input", { value: name, onChange: e => setName(e.target.value), placeholder: "Full name", style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) })), React.createElement("div", { style: { marginBottom: 14 } }, React.createElement("label", { style: { display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 6 } }, "Initials"), React.createElement("input", { value: initials, onChange: e => setInitials(e.target.value), placeholder: "e.g. TS", maxLength: 4, style: Object.assign(Object.assign({}, inputStyle()), { width: 120, textTransform: 'uppercase', fontWeight: 600 }) }), React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 4, fontStyle: 'italic' } }, "1\u20134 characters. Used in team chips and the live tracker.")), canEditOthers && !isSelf && React.createElement(React.Fragment, null, React.createElement("div", { style: { height: 1, background: C.line, margin: '20px 0' } }), React.createElement("div", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 12 } }, "Senior controls"), React.createElement("div", { style: { marginBottom: 14 } }, React.createElement("label", { style: { display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 6 } }, "Role"), React.createElement("div", { style: { display: 'flex', gap: 6 } }, ['contributor', 'senior'].map(r => React.createElement("button", { key: r, onClick: () => setRole(r), style: { padding: '6px 14px', fontSize: 12, fontWeight: 600, borderRadius: 3, cursor: 'pointer', border: `1px solid ${role === r ? C.cord : C.line}`, background: role === r ? C.cord : C.white, color: role === r ? '#fff' : C.text, fontFamily: "'DM Sans', system-ui, sans-serif", textTransform: 'capitalize' } }, r)))), React.createElement("div", { style: { marginBottom: 14 } }, React.createElement("label", { style: { display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted, marginBottom: 6 } }, "Department"), React.createElement("select", { value: department || '', onChange: e => setDepartment(e.target.value), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }, DEPT_OPTIONS.map(o => React.createElement("option", { key: o.value, value: o.value }, o.label)))), React.createElement("div", { style: { marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement("input", { type: "checkbox", id: "active", checked: active, onChange: e => setActive(e.target.checked), style: { accentColor: C.cord, cursor: 'pointer' } }), React.createElement("label", { htmlFor: "active", style: { fontSize: 12, color: C.text, cursor: 'pointer' } }, "Active user"), React.createElement("div", { style: { fontSize: 10, color: C.mist, fontStyle: 'italic' } }, "Inactive users stay in records but don\u2019t appear in pickers."))), error && React.createElement("div", { style: { background: '#FDECEA', border: `1px solid ${C.redStatus}`, color: C.redStatus, padding: '8px 12px', borderRadius: 4, fontSize: 12, marginBottom: 10 } }, error), savedFlash && React.createElement("div", { style: { background: C.greenLight, border: `1px solid ${C.green}`, color: C.green, padding: '8px 12px', borderRadius: 4, fontSize: 12, marginBottom: 10, fontWeight: 600 } }, "\u2713 Saved"), React.createElement("div", { style: { display: 'flex', gap: 8, marginTop: 18 } }, React.createElement("button", { onClick: submit, disabled: saving, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: saving ? 0.5 : 1 }) }, saving ? "Saving\u2026" : "Save changes"), React.createElement("button", { onClick: onClose, style: btnSecondary() }, "Done")))));
 }
@@ -3954,7 +4454,7 @@ function AddActionModal({ project, users, onClose, onAdd, prefillDescription, is
             setBusy(false);
         }
     };
-    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.25)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 440, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, isConversion ? "Convert flag to action" : "Add action"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 18 } }, isConversion ? "Converting a flag — assign an owner so it has clear accountability. For project: " : "For project: ", React.createElement("strong", { style: { color: C.text } }, project.name)), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Description *" }, React.createElement("textarea", { value: description, onChange: (e) => setDescription(e.target.value), autoFocus: true, required: true, rows: 2, style: Object.assign(Object.assign({}, inputStyle()), { resize: 'vertical' }), placeholder: "What needs to happen?" })), React.createElement(Field, { label: "Owner *" }, React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 8 } }, React.createElement("button", { type: "button", onClick: () => setOwnerMode('user'), style: {
+    return (React.createElement("div", { className: "bf-overlay", onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.25)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { className: "bf-drawer", onClick: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 440, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, isConversion ? "Convert flag to action" : "Add action"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 18 } }, isConversion ? "Converting a flag — assign an owner so it has clear accountability. For project: " : "For project: ", React.createElement("strong", { style: { color: C.text } }, project.name)), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Description *" }, React.createElement("textarea", { value: description, onChange: (e) => setDescription(e.target.value), autoFocus: true, required: true, rows: 2, style: Object.assign(Object.assign({}, inputStyle()), { resize: 'vertical' }), placeholder: "What needs to happen?" })), React.createElement(Field, { label: "Owner *" }, React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 8 } }, React.createElement("button", { type: "button", onClick: () => setOwnerMode('user'), style: {
             flex: 1, padding: '7px 10px', fontSize: 12, fontWeight: 500,
             background: ownerMode === 'user' ? C.red : C.white,
             color: ownerMode === 'user' ? C.white : C.text,
@@ -3988,7 +4488,7 @@ function AttendancePanel({ attendees, users, projectTeamUserIds, departmentUserI
     const addable = users.filter(u => !attendeeUserIds.has(u.id) && u.active !== false);
     const present = attendees.filter(a => a.present).length;
     const canEdit = isChair && !isReadOnly;
-    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.25)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 420, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, "Attendance"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 14 } }, attendees.length > 0 ? `${present} of ${attendees.length} present` : 'No attendees recorded yet', !canEdit && React.createElement("span", { style: { display: 'block', marginTop: 6, fontStyle: 'italic', color: C.mist } }, isReadOnly ? 'Meeting closed — register is read-only.' : 'Only the meeting chair can edit attendance.')), canEdit && (React.createElement("div", { style: { marginBottom: 16, padding: 12, background: C.bg, borderRadius: 4, border: `1px solid ${C.line}` } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginBottom: 8 } }, "Quick add or remove a group"), React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, (() => {
+    return (React.createElement("div", { className: "bf-overlay", onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.25)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { className: "bf-drawer", onClick: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 420, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, "Attendance"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 14 } }, attendees.length > 0 ? `${present} of ${attendees.length} present` : 'No attendees recorded yet', !canEdit && React.createElement("span", { style: { display: 'block', marginTop: 6, fontStyle: 'italic', color: C.mist } }, isReadOnly ? 'Meeting closed — register is read-only.' : 'Only the meeting chair can edit attendance.')), canEdit && (React.createElement("div", { style: { marginBottom: 16, padding: 12, background: C.bg, borderRadius: 4, border: `1px solid ${C.line}` } }, React.createElement("div", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, marginBottom: 8 } }, "Quick add or remove a group"), React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, (() => {
         const deptArr = [...departmentUserIds];
         const allDeptIn = deptArr.length > 0 && deptArr.every(id => attendeeUserIds.has(id));
         return React.createElement("button", { onClick: () => allDeptIn ? onRemoveGroup(departmentUserIds) : onApplyGroup(departmentUserIds), disabled: departmentUserIds.size === 0, style: { flex: 1, minWidth: 130, padding: '8px 10px', fontSize: 11, fontWeight: 600, borderRadius: 3, cursor: departmentUserIds.size === 0 ? 'default' : 'pointer', border: `1px solid ${allDeptIn ? C.line : C.cordMid}`, background: C.white, color: allDeptIn ? C.muted : C.cord, opacity: departmentUserIds.size === 0 ? 0.4 : 1, fontFamily: "'DM Sans', system-ui, sans-serif" } }, `${allDeptIn ? '\u2212 Remove' : '+ Add'} ${meetingTypeShort || 'Department'} team (${departmentUserIds.size})`);
@@ -4206,7 +4706,7 @@ function RoundUpModal({ meeting, actions, users, projects, chairName, attendees,
         w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Minutes — ${esc(cfg.label)} — ${esc(formatMeetingDate(meeting.meeting_date))}</title><style>body{font-family:'DM Sans',system-ui,sans-serif;color:#2A2E2C;max-width:800px;margin:32px auto;padding:0 24px;line-height:1.5}h1{font-size:22px;color:#1C1F1E;margin-bottom:4px}.meta{color:#6B7270;font-size:13px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #E2E0DD}@media print{body{margin:0}}</style></head><body><h1>${esc(cfg.label)} — Minutes</h1><div class="meta">${esc(formatMeetingDateLong(meeting.meeting_date))} \u00B7 Chair: ${esc(chairName)} \u00B7 ${actions.length} action${actions.length === 1 ? '' : 's'}${flags.length > 0 ? ` \u00B7 ${flags.length} flag${flags.length === 1 ? '' : 's'}` : ''}</div>${projectsHtml || '<p style="color:#6B7270">No actions recorded for this meeting.</p>'}${flagsHtml}<p style="margin-top:32px;color:#9BA3A0;font-size:11px">Generated by BixFrame \u00B7 ${esc(new Date().toLocaleDateString('en-GB'))}</p><script>window.onload=function(){window.print()}<\/script></body></html>`);
         w.document.close();
     };
-    return (React.createElement("div", { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto' } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 } }, React.createElement("div", null, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "Round-up emails"), React.createElement("div", { style: { fontSize: 13, color: C.muted, marginTop: 4 } }, grouped.length, " recipient", grouped.length === 1 ? '' : 's', " \u00B7 ", actions.length, " action", actions.length === 1 ? '' : 's', " from ", formatMeetingDateLong(meeting.meeting_date))), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), grouped.length > 0 && (React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } }, React.createElement("button", { onClick: emailAllRecipients, style: btnPrimary() }, "Email all attendees"), React.createElement("button", { onClick: () => { navigator.clipboard.writeText(buildAllEmailsBody()); alert('All actions copied to clipboard.'); }, style: btnSecondary() }, "Copy all"), React.createElement("button", { onClick: exportMinutes, style: btnSecondary() }, "Export minutes"))), grouped.length === 0 ? (React.createElement("div", { style: { background: C.bg, padding: 24, borderRadius: 4, textAlign: 'center', color: C.muted, fontSize: 13 } }, "No actions assigned in this meeting. Add some actions before generating round-ups.")) : (React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 14, background: C.amberLight, padding: 10, borderRadius: 4, borderLeft: `3px solid ${C.amber}` } }, "Click \"Open email\" for each recipient. Your mail client opens with the message pre-filled \u2014 just click send. Recipients without a known email address show the name only; copy the message into a new email manually."), grouped.map((r, idx) => (React.createElement("div", { key: idx, style: { border: `1px solid ${C.line}`, borderRadius: 6, padding: 14, marginBottom: 10 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 14, fontWeight: 600, color: C.text } }, r.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, r.email || 'No email on file')), React.createElement("div", { style: { display: 'flex', gap: 6 } }, r.email && (React.createElement("a", { href: buildEmail(r), style: Object.assign(Object.assign({}, btnPrimary()), { textDecoration: 'none', display: 'inline-block' }) }, "Open email")), React.createElement("button", { onClick: () => {
+    return (React.createElement("div", { className: "bf-overlay", onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { className: "bf-modal", onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto' } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 } }, React.createElement("div", null, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "Round-up emails"), React.createElement("div", { style: { fontSize: 13, color: C.muted, marginTop: 4 } }, grouped.length, " recipient", grouped.length === 1 ? '' : 's', " \u00B7 ", actions.length, " action", actions.length === 1 ? '' : 's', " from ", formatMeetingDateLong(meeting.meeting_date))), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), grouped.length > 0 && (React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } }, React.createElement("button", { onClick: emailAllRecipients, style: btnPrimary() }, "Email all attendees"), React.createElement("button", { onClick: () => { navigator.clipboard.writeText(buildAllEmailsBody()); alert('All actions copied to clipboard.'); }, style: btnSecondary() }, "Copy all"), React.createElement("button", { onClick: exportMinutes, style: btnSecondary() }, "Export minutes"))), grouped.length === 0 ? (React.createElement("div", { style: { background: C.bg, padding: 24, borderRadius: 4, textAlign: 'center', color: C.muted, fontSize: 13 } }, "No actions assigned in this meeting. Add some actions before generating round-ups.")) : (React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 14, background: C.amberLight, padding: 10, borderRadius: 4, borderLeft: `3px solid ${C.amber}` } }, "Click \"Open email\" for each recipient. Your mail client opens with the message pre-filled \u2014 just click send. Recipients without a known email address show the name only; copy the message into a new email manually."), grouped.map((r, idx) => (React.createElement("div", { key: idx, style: { border: `1px solid ${C.line}`, borderRadius: 6, padding: 14, marginBottom: 10 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 14, fontWeight: 600, color: C.text } }, r.name), React.createElement("div", { style: { fontSize: 11, color: C.muted, marginTop: 2 } }, r.email || 'No email on file')), React.createElement("div", { style: { display: 'flex', gap: 6 } }, r.email && (React.createElement("a", { href: buildEmail(r), style: Object.assign(Object.assign({}, btnPrimary()), { textDecoration: 'none', display: 'inline-block' }) }, "Open email")), React.createElement("button", { onClick: () => {
             const subject = `${meetingLabel} Round-up — ${formatMeetingDate(meeting.meeting_date)} — Your Actions`;
             const lines = [];
             lines.push(`Subject: ${subject}`);
