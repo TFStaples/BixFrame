@@ -1494,29 +1494,7 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
     ];
     return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '220px 1fr', borderRadius: 5, overflow: 'hidden', border: `1px solid ${C.line}` } }, React.createElement("div", { onMouseEnter: () => setDarkHover(true), onMouseLeave: () => setDarkHover(false), style: { background: C.grip, padding: '16px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden', transition: 'box-shadow 0.18s ease, outline 0.18s ease', outline: darkHover ? `2px solid ${C.cordBright}` : '2px solid transparent', outlineOffset: '-2px', boxShadow: darkHover ? 'inset 0 0 0 9999px rgba(93,191,176,0.06)' : 'none' } }, React.createElement("div", { style: { position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(93,191,176,0.16) 1.3px, transparent 1.3px)', backgroundSize: '10px 10px', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', pointerEvents: 'none' } }), 
     // Expand-to-dashboard icon, top-right of dark panel.
-    onOpenProjectDashboard && React.createElement("button", { onClick: () => onOpenProjectDashboard(project.id), title: "Open project dashboard", style: { position: 'absolute', top: 8, right: 8, zIndex: 2, background: darkHover ? 'rgba(93,191,176,0.18)' : 'transparent', border: `1px solid ${darkHover ? C.cordBright : 'rgba(255,255,255,0.12)'}`, borderRadius: 3, padding: '4px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', transition: 'all 0.15s ease' } }, React.createElement("svg", { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("path", { d: "M14 4h6v6M20 4l-9 9M10 20H4v-6M4 20l9-9", stroke: C.cordBright, strokeWidth: 2.4, strokeLinecap: "round", strokeLinejoin: "round" })), darkHover && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.cordBright } }, "Open")), React.createElement("div", { style: { position: 'relative', zIndex: 1 } }, React.createElement("textarea", { defaultValue: project.name || '', onBlur: (e) => {
-            if (e.target.value !== project.name)
-                updateField('name', e.target.value);
-        }, placeholder: "Project name", rows: 2, style: {
-            display: 'block', width: '100%', background: 'transparent', border: 'none',
-            fontSize: 15, fontWeight: 600, color: C.fog, fontFamily: 'inherit',
-            padding: 0, margin: 0, boxSizing: 'border-box', outline: 'none',
-            resize: 'none', overflow: 'hidden', lineHeight: 1.3,
-        }, onFocus: e => { e.target.style.background = 'rgba(255,255,255,0.08)'; e.target.style.borderRadius = '2px'; }, onBlurCapture: e => { e.target.style.background = 'transparent'; } }), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: 'rgba(232,234,232,0.55)', fontFamily: "'DM Mono', monospace" } }, "#"), React.createElement("input", { defaultValue: project.project_number || '', onBlur: (e) => {
-            if (e.target.value !== project.project_number)
-                updateField('project_number', e.target.value);
-        }, placeholder: "Number", style: {
-            background: 'transparent', border: 'none',
-            fontSize: 12, fontWeight: 500, color: 'rgba(232,234,232,0.7)', fontFamily: "'DM Mono', monospace",
-            padding: 0, margin: 0, width: 80, outline: 'none',
-        }, onFocus: e => { e.target.style.background = 'rgba(255,255,255,0.08)'; e.target.style.borderRadius = '2px'; e.target.style.padding = '1px 4px'; }, onBlurCapture: e => { e.target.style.background = 'transparent'; e.target.style.padding = '0'; } }), React.createElement(SaveIndicator, { status: saveStatus, light: true })), React.createElement("input", { defaultValue: project.address || '', onBlur: (e) => {
-            if (e.target.value !== project.address)
-                updateField('address', e.target.value);
-        }, placeholder: "Address", style: {
-            display: 'block', width: '100%', background: 'transparent', border: 'none',
-            fontSize: 10.5, color: 'rgba(232,234,232,0.62)', fontFamily: 'inherit',
-            padding: 0, marginTop: 6, boxSizing: 'border-box', outline: 'none',
-        }, onFocus: e => { e.target.style.background = 'rgba(255,255,255,0.08)'; e.target.style.borderRadius = '2px'; e.target.style.padding = '2px 4px'; }, onBlurCapture: e => { e.target.style.background = 'transparent'; e.target.style.padding = '0'; } }), project.address && React.createElement("a", { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(project.address)}`, target: "_blank", rel: "noopener noreferrer", style: { display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, color: C.cordBright, textDecoration: 'none', marginTop: 4, opacity: 0.85 } }, "\u2197 View on map")), React.createElement("div", { style: { marginTop: 12, position: 'relative', zIndex: 1 } }, React.createElement("div", { style: { fontSize: 8, color: 'rgba(232,234,232,0.5)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid rgba(255,255,255,0.1)' } }, "Project Team"), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 } }, teamMembers.map(({ label, user, field }) => {
+    onOpenProjectDashboard && React.createElement("button", { onClick: () => onOpenProjectDashboard(project.id), title: "Open project dashboard", style: { position: 'absolute', top: 8, right: 8, zIndex: 2, background: darkHover ? 'rgba(93,191,176,0.18)' : 'transparent', border: `1px solid ${darkHover ? C.cordBright : 'rgba(255,255,255,0.12)'}`, borderRadius: 3, padding: '4px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', transition: 'all 0.15s ease' } }, React.createElement("svg", { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("path", { d: "M14 4h6v6M20 4l-9 9M10 20H4v-6M4 20l9-9", stroke: C.cordBright, strokeWidth: 2.4, strokeLinecap: "round", strokeLinejoin: "round" })), darkHover && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.cordBright } }, "Open")), React.createElement("div", { style: { position: 'relative', zIndex: 1 } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.fog, lineHeight: 1.3, wordBreak: 'break-word', overflowWrap: 'anywhere' } }, project.name || 'Untitled project'), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: 'rgba(232,234,232,0.55)', fontFamily: "'DM Mono', monospace" } }, "#"), React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: 'rgba(232,234,232,0.7)', fontFamily: "'DM Mono', monospace" } }, project.project_number || '\u2014'), React.createElement(SaveIndicator, { status: saveStatus, light: true })), project.address ? React.createElement("div", { style: { fontSize: 10.5, color: 'rgba(232,234,232,0.62)', marginTop: 6 } }, project.address) : null, project.address && React.createElement("a", { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(project.address)}`, target: "_blank", rel: "noopener noreferrer", style: { display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, color: C.cordBright, textDecoration: 'none', marginTop: 4, opacity: 0.85 } }, "\u2197 View on map")), React.createElement("div", { style: { marginTop: 12, position: 'relative', zIndex: 1 } }, React.createElement("div", { style: { fontSize: 8, color: 'rgba(232,234,232,0.5)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid rgba(255,255,255,0.1)' } }, "Project Team"), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 } }, teamMembers.map(({ label, user, field }) => {
         const value = user ? user.initials : '';
         return (React.createElement("div", { key: field, title: user ? `${user.display_name}${user.department ? ' \u00B7 ' + user.department : ''}` : 'Unassigned', style: {
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
@@ -1528,9 +1506,7 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
                 color: value ? C.cordBright : 'rgba(232,234,232,0.3)', fontFamily: 'inherit',
                 lineHeight: 1.2,
             } }, value || '\u2014')));
-    })))), React.createElement("div", { style: { background: C.white, padding: '14px 16px', position: 'relative' } }, React.createElement("div", { style: { position: 'absolute', top: 12, right: 12, display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Status:"), isSenior
-        ? React.createElement(StatusSelect, { value: project.status, onChange: v => updateField('status', v) })
-        : (() => {
+    })))), React.createElement("div", { style: { background: C.white, padding: '14px 16px', position: 'relative' } }, React.createElement("div", { style: { position: 'absolute', top: 12, right: 12, display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, fontFamily: "'DM Sans', system-ui, sans-serif" } }, "Status:"), (() => {
             const st = statusLookup[project.status] || { label: project.status || '—', bg: '#EEE', fg: C.muted };
             return React.createElement("span", { style: { display: 'inline-block', padding: '5px 8px', borderRadius: 3, background: st.bg, color: st.fg, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, st.label);
         })()), React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 10, paddingRight: 120 } }, addedDate && React.createElement("span", null, "Added ", addedDate), lastUpdater && React.createElement("span", null, " \u00B7 edited by ", React.createElement("strong", { style: { color: C.text } }, lastUpdater.display_name), " ", formatRelative(project.updated_at))), (() => {
@@ -2907,6 +2883,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     const project = (projects || []).find(p => p.id === projectId);
     const [activeTab, setActiveTab] = React.useState('team');
     const [saving, setSaving] = React.useState(null); // role currently saving
+    const [showEdit, setShowEdit] = React.useState(false);
     if (!project) {
         return React.createElement("div", { style: { padding: 40, textAlign: 'center', color: C.muted } }, React.createElement("div", { style: { marginBottom: 12 } }, "Project not found."), React.createElement("button", { onClick: onBack, style: btnSecondary() }, "\u2190 Back to projects"));
     }
@@ -2948,9 +2925,9 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     const TABS = [
         { value: 'team', label: 'Team', available: true },
     ];
-    return React.createElement("div", { style: { background: C.bg, minHeight: 'calc(100vh - 54px)' } }, 
+    return React.createElement("div", { style: { background: C.bg, minHeight: 'calc(100vh - 54px)' } }, showEdit && React.createElement(ProjectEditModal, { project: project, users: users, onSave: onSaveTeam, onClose: () => setShowEdit(false) }), 
     // Dark header
-    React.createElement("div", { style: { background: C.grip, padding: '18px 32px', borderBottom: `2px solid ${C.cord}` } }, React.createElement("div", { style: { maxWidth: 1280, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' } }, React.createElement("button", { onClick: onBack, style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.18)', color: 'rgba(232,234,232,0.85)', padding: '6px 12px', borderRadius: 3, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'uppercase', letterSpacing: '0.08em' }, onMouseEnter: e => e.currentTarget.style.borderColor = C.cordBright, onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)' }, "\u2190 All projects"), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.cordBright, textTransform: 'uppercase', letterSpacing: '0.14em' } }, "Project Dashboard"), React.createElement("div", { style: { fontSize: 18, fontWeight: 600, color: C.white, fontFamily: "'DM Sans', system-ui, sans-serif", marginTop: 2 } }, project.name || 'Untitled project', project.project_number && React.createElement("span", { style: { fontFamily: "'DM Mono', monospace", fontSize: 13, color: 'rgba(232,234,232,0.55)', fontWeight: 400, marginLeft: 8 } }, "#", project.project_number))), React.createElement("span", { style: { background: status.bg, color: status.fg, padding: '5px 14px', borderRadius: 3, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' } }, status.label))), 
+    React.createElement("div", { style: { background: C.grip, padding: '18px 32px', borderBottom: `2px solid ${C.cord}` } }, React.createElement("div", { style: { maxWidth: 1280, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' } }, React.createElement("button", { onClick: onBack, style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.18)', color: 'rgba(232,234,232,0.85)', padding: '6px 12px', borderRadius: 3, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'uppercase', letterSpacing: '0.08em' }, onMouseEnter: e => e.currentTarget.style.borderColor = C.cordBright, onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)' }, "\u2190 All projects"), React.createElement("div", { style: { flex: 1, minWidth: 0 } }, React.createElement("div", { style: { fontSize: 10, fontWeight: 700, color: C.cordBright, textTransform: 'uppercase', letterSpacing: '0.14em' } }, "Project Dashboard"), React.createElement("div", { style: { fontSize: 18, fontWeight: 600, color: C.white, fontFamily: "'DM Sans', system-ui, sans-serif", marginTop: 2 } }, project.name || 'Untitled project', project.project_number && React.createElement("span", { style: { fontFamily: "'DM Mono', monospace", fontSize: 13, color: 'rgba(232,234,232,0.55)', fontWeight: 400, marginLeft: 8 } }, "#", project.project_number))), React.createElement("span", { style: { background: status.bg, color: status.fg, padding: '5px 14px', borderRadius: 3, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' } }, status.label), React.createElement("button", { onClick: () => setShowEdit(true), style: { background: C.cord, border: 'none', color: '#fff', padding: '7px 16px', borderRadius: 3, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'uppercase', letterSpacing: '0.08em' } }, "Edit project"))), 
     // Main content
     React.createElement("div", { style: { maxWidth: 1280, margin: '0 auto', padding: '24px 32px' } }, 
     // Metric tiles row
@@ -2972,11 +2949,16 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     // Project Information panel (read-only)
     React.createElement("div", null, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.red, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12, paddingBottom: 8, borderBottom: `2px solid ${C.red}` } }, "Project Information"), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, infoRows.map(r => React.createElement("div", { key: r.label, style: { display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'center', gap: 12 } }, React.createElement("div", { style: { fontSize: 11, color: C.muted, fontWeight: 500 } }, r.label), r.isStatus
         ? React.createElement("span", { style: { display: 'inline-block', padding: '3px 10px', borderRadius: 3, background: r.statusBg, color: r.statusFg, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em' } }, r.value)
-        : React.createElement("div", { style: { fontSize: 13, color: C.text, fontWeight: 500 } }, r.value)))), React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 16, fontStyle: 'italic' } }, "Edit project name, number, address and status from the home projects page.")), 
+        : React.createElement("div", { style: { fontSize: 13, color: C.text, fontWeight: 500 } }, r.value)))), React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 16, fontStyle: 'italic' } }, "Project facts and the team are edited together via the Edit project button above.")), 
     // Project Team panel (the only manipulable area)
-    React.createElement("div", null, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.red, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12, paddingBottom: 8, borderBottom: `2px solid ${C.red}` } }, "Project Team"), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, TEAM_ROWS.map(row => React.createElement("div", { key: row.field, style: { display: 'grid', gridTemplateColumns: '140px 1fr 20px', alignItems: 'center', gap: 12 } }, React.createElement("div", { style: { fontSize: 11, color: C.muted, fontWeight: 500 } }, row.label), React.createElement(UserPickerField, { users: users, value: project[row.field] || null, onChange: (newId) => handleTeamChange(row.field, newId), label: row.label, department: row.department, allowClear: row.field === 'owner_user_id' ? false : true, required: row.field === 'owner_user_id' }), saving === row.field
-        ? React.createElement("span", { style: { fontSize: 10, color: C.cord, fontWeight: 600 } }, "\u2026")
-        : React.createElement("span", null))))))), 
+    React.createElement("div", null, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.red, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12, paddingBottom: 8, borderBottom: `2px solid ${C.red}` } }, "Project Team"), React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, TEAM_ROWS.map(row => {
+        const u = project[row.field] ? users.find(x => x.id === project[row.field]) : null;
+        return React.createElement("div", { key: row.field, style: { display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'center', gap: 12, padding: '6px 0', borderBottom: `1px solid ${C.line}` } },
+            React.createElement("div", { style: { fontSize: 11, color: C.muted, fontWeight: 500 } }, row.label),
+            u
+                ? React.createElement("span", { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.text } }, React.createElement("strong", { style: { color: C.cord, fontWeight: 700 } }, u.initials || '\u2014'), u.display_name, u.department && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: C.cord, background: C.cordSoft, padding: '1px 7px', borderRadius: 8, textTransform: 'uppercase', letterSpacing: '0.05em' } }, (MEETING_TYPES[u.department] || { short: u.department }).short))
+                : React.createElement("span", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic' } }, 'Unassigned'));
+    }))))), 
     // Module Status placeholder block
     React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: '20px 24px', marginTop: 24 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.red, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14, paddingBottom: 8, borderBottom: `2px solid ${C.red}` } }, "Module Status"), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 } }, PLANNED_MODULES.map(m => React.createElement("div", { key: m, style: { padding: '12px 16px', border: `1px dashed ${C.line}`, borderRadius: 4, fontSize: 12, color: C.mist, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, React.createElement("span", null, m), React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.mist } }, "Planned")))))));
 }
@@ -4443,13 +4425,88 @@ function ActionRow({ action, users, projects, isReadOnly, onUpdate, onDelete, co
             : React.createElement(RaiseQueryForm, { users: users, currentUser: currentUser, onSubmit: async (text, targetId) => { await onRaiseQuery(action, text, targetId); setShowRaiseQuery(false); }, onCancel: () => setShowRaiseQuery(false) })))));
 }
 // ============================================================
+// PROJECT EDIT MODAL — the single place a project's facts
+// (name / number / address / status) and team are edited.
+// Replaces the old inline edits on the home cards and the
+// dashboard Team-tab pickers (Phase 2b consolidation).
+// ============================================================
+function ProjectEditModal({ project, users, onSave, onClose }) {
+    const [form, setForm] = useState({
+        name: project.name || '',
+        project_number: project.project_number || '',
+        address: project.address || '',
+        status: project.status || 'lead',
+        owner_user_id: project.owner_user_id || null,
+        pre_con_lead_user_id: project.pre_con_lead_user_id || null,
+        designer_user_id: project.designer_user_id || null,
+        technical_designer_user_id: project.technical_designer_user_id || null,
+        furniture_consultant_user_id: project.furniture_consultant_user_id || null,
+        project_manager_user_id: project.project_manager_user_id || null,
+    });
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const handle = (field) => (e) => setForm(p => Object.assign(Object.assign({}, p), { [field]: e.target.value }));
+    const setUser = (field) => (uid) => setForm(p => Object.assign(Object.assign({}, p), { [field]: uid }));
+    const submit = async (e) => {
+        e.preventDefault();
+        if (!form.name.trim() || !form.project_number.trim() || !form.owner_user_id) {
+            setError('Project name, number and owner are required.');
+            return;
+        }
+        setBusy(true);
+        setError(null);
+        try {
+            // Push only changed fields, through the same optimistic
+            // per-field save path the rest of the app uses.
+            for (const f of Object.keys(form)) {
+                const raw = form[f];
+                const next = typeof raw === 'string' ? (raw.trim() || null) : raw;
+                const prev = project[f] == null ? null : project[f];
+                if (next !== prev)
+                    await onSave(project.id, f, next);
+            }
+            onClose();
+        }
+        catch (e2) {
+            setError((e2 && e2.message) || 'Save failed.');
+            setBusy(false);
+        }
+    };
+    const pickerRow = (label, field, department, required) => React.createElement(Field, { label: label }, React.createElement(UserPickerField, { users: users, value: form[field], onChange: setUser(field), department: department, required: !!required, allowClear: !required }));
+    return (React.createElement("div", { className: "bf-overlay", onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
+        React.createElement("div", { className: "bf-modal", onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' } },
+            React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 } },
+                React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "Edit project"),
+                React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")),
+            React.createElement("form", { onSubmit: submit },
+                React.createElement(Field, { label: "Project name *" }, React.createElement("input", { value: form.name, onChange: handle('name'), required: true, style: inputStyle(), autoFocus: true })),
+                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } },
+                    React.createElement(Field, { label: "Project number *" }, React.createElement("input", { value: form.project_number, onChange: handle('project_number'), required: true, style: inputStyle() })),
+                    React.createElement(Field, { label: "Status" }, React.createElement("select", { value: form.status, onChange: handle('status'), style: inputStyle() }, STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label))))),
+                React.createElement(Field, { label: "Address" }, React.createElement("input", { value: form.address, onChange: handle('address'), style: inputStyle() })),
+                React.createElement("div", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, margin: '18px 0 10px', paddingBottom: 6, borderBottom: `1px solid ${C.line}` } }, "Project team"),
+                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } },
+                    pickerRow('Owner *', 'owner_user_id', null, true),
+                    pickerRow('Pre-Con Lead', 'pre_con_lead_user_id', 'pre-con')),
+                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } },
+                    pickerRow('Designer', 'designer_user_id', 'design'),
+                    pickerRow('Technical Designer', 'technical_designer_user_id', 'technical')),
+                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } },
+                    pickerRow('Project Manager', 'project_manager_user_id', 'pm'),
+                    pickerRow('Furniture Consultant', 'furniture_consultant_user_id', 'furniture')),
+                error && React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 10, borderRadius: 4, fontSize: 13, marginBottom: 14, borderLeft: `3px solid ${C.redStatus}` } }, error),
+                React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } },
+                    React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"),
+                    React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Saving\u2026' : 'Save changes'))))));
+}
+// ============================================================
 // ADD ACTION MODAL
 // ============================================================
 function AddActionModal({ project, users, onClose, onAdd, prefillDescription, isConversion }) {
     const [description, setDescription] = useState(prefillDescription || '');
-    const [ownerMode, setOwnerMode] = useState('user'); // 'user' | 'other'
+    // Phase 5a strict mode: the owner must be a registered app_user.
+    // The legacy "Other person" free-text fallback is gone.
     const [ownerUserId, setOwnerUserId] = useState('');
-    const [ownerNameFallback, setOwnerNameFallback] = useState('');
     const [collaboratorIds, setCollaboratorIds] = useState([]);
     const [dueDate, setDueDate] = useState('');
     const [priority, setPriority] = useState('normal');
@@ -4458,17 +4515,15 @@ function AddActionModal({ project, users, onClose, onAdd, prefillDescription, is
         e.preventDefault();
         if (!description.trim())
             return;
-        if (ownerMode === 'user' && !ownerUserId)
-            return;
-        if (ownerMode === 'other' && !ownerNameFallback.trim())
+        if (!ownerUserId)
             return;
         setBusy(true);
         try {
             await onAdd({
                 project_id: project.id,
                 description: description.trim(),
-                owner_user_id: ownerMode === 'user' ? ownerUserId : null,
-                owner_name_fallback: ownerMode === 'other' ? ownerNameFallback.trim() : null,
+                owner_user_id: ownerUserId,
+                owner_name_fallback: null,
                 collaborator_user_ids: collaboratorIds,
                 due_date: dueDate || null,
                 priority,
@@ -4478,19 +4533,7 @@ function AddActionModal({ project, users, onClose, onAdd, prefillDescription, is
             setBusy(false);
         }
     };
-    return (React.createElement("div", { className: "bf-overlay", onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.25)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { className: "bf-drawer", onClick: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 440, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, isConversion ? "Convert flag to action" : "Add action"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 18 } }, isConversion ? "Converting a flag — assign an owner so it has clear accountability. For project: " : "For project: ", React.createElement("strong", { style: { color: C.text } }, project.name)), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Description *" }, React.createElement("textarea", { value: description, onChange: (e) => setDescription(e.target.value), autoFocus: true, required: true, rows: 2, style: Object.assign(Object.assign({}, inputStyle()), { resize: 'vertical' }), placeholder: "What needs to happen?" })), React.createElement(Field, { label: "Owner *" }, React.createElement("div", { style: { display: 'flex', gap: 8, marginBottom: 8 } }, React.createElement("button", { type: "button", onClick: () => setOwnerMode('user'), style: {
-            flex: 1, padding: '7px 10px', fontSize: 12, fontWeight: 500,
-            background: ownerMode === 'user' ? C.red : C.white,
-            color: ownerMode === 'user' ? C.white : C.text,
-            border: `1px solid ${ownerMode === 'user' ? C.red : C.line}`,
-            borderRadius: 4, cursor: 'pointer',
-        } }, "System user"), React.createElement("button", { type: "button", onClick: () => setOwnerMode('other'), style: {
-            flex: 1, padding: '7px 10px', fontSize: 12, fontWeight: 500,
-            background: ownerMode === 'other' ? C.red : C.white,
-            color: ownerMode === 'other' ? C.white : C.text,
-            border: `1px solid ${ownerMode === 'other' ? C.red : C.line}`,
-            borderRadius: 4, cursor: 'pointer',
-        } }, "Other person")), ownerMode === 'user' ? (React.createElement("select", { value: ownerUserId, onChange: (e) => setOwnerUserId(e.target.value), required: true, style: inputStyle() }, React.createElement("option", { value: "" }, "Select\u2026"), users.map(u => React.createElement("option", { key: u.id, value: u.id }, u.display_name, " ", u.initials ? `(${u.initials})` : '')))) : (React.createElement("input", { type: "text", value: ownerNameFallback, onChange: (e) => setOwnerNameFallback(e.target.value), required: true, placeholder: "Name", style: inputStyle() }))), React.createElement(Field, { label: "Collaborators" }, React.createElement(CollaboratorsField, { users: users, value: collaboratorIds, onChange: setCollaboratorIds, excludeUserId: ownerMode === 'user' ? ownerUserId : null }), React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 4, fontStyle: 'italic' } }, "People working on this action with the owner. They'll see it in their actions list; only the owner can close it.")), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Due date" }, React.createElement("input", { type: "date", value: dueDate, onChange: (e) => setDueDate(e.target.value), style: inputStyle() })), React.createElement(Field, { label: "Priority" }, React.createElement("select", { value: priority, onChange: (e) => setPriority(e.target.value), style: inputStyle() }, React.createElement("option", { value: "normal" }, "Normal"), React.createElement("option", { value: "high" }, "High"), React.createElement("option", { value: "urgent" }, "Urgent")))), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Adding…' : 'Add action'))))));
+    return (React.createElement("div", { className: "bf-overlay", onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(28,31,30,0.25)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' } }, React.createElement("div", { className: "bf-drawer", onClick: (e) => e.stopPropagation(), style: { background: C.white, height: '100%', width: '100%', maxWidth: 440, padding: 28, overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.18)', borderLeft: `3px solid ${C.cord}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, color: C.ink, letterSpacing: '0.02em', fontWeight: 600 } }, isConversion ? "Convert flag to action" : "Add action"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("div", { style: { fontSize: 12, color: C.muted, marginBottom: 18 } }, isConversion ? "Converting a flag — assign an owner so it has clear accountability. For project: " : "For project: ", React.createElement("strong", { style: { color: C.text } }, project.name)), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Description *" }, React.createElement("textarea", { value: description, onChange: (e) => setDescription(e.target.value), autoFocus: true, required: true, rows: 2, style: Object.assign(Object.assign({}, inputStyle()), { resize: 'vertical' }), placeholder: "What needs to happen?" })), React.createElement(Field, { label: "Owner *" }, React.createElement(UserPickerField, { users: users, value: ownerUserId || null, onChange: (uid) => setOwnerUserId(uid || ''), required: true, allowClear: false }), React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 4, fontStyle: 'italic' } }, "Owner must be a registered user \u2014 they're accountable for closing it.")), React.createElement(Field, { label: "Collaborators" }, React.createElement(CollaboratorsField, { users: users, value: collaboratorIds, onChange: setCollaboratorIds, excludeUserId: ownerUserId || null }), React.createElement("div", { style: { fontSize: 10, color: C.mist, marginTop: 4, fontStyle: 'italic' } }, "People working on this action with the owner. They'll see it in their actions list; only the owner can close it.")), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Due date" }, React.createElement("input", { type: "date", value: dueDate, onChange: (e) => setDueDate(e.target.value), style: inputStyle() })), React.createElement(Field, { label: "Priority" }, React.createElement("select", { value: priority, onChange: (e) => setPriority(e.target.value), style: inputStyle() }, React.createElement("option", { value: "normal" }, "Normal"), React.createElement("option", { value: "high" }, "High"), React.createElement("option", { value: "urgent" }, "Urgent")))), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Adding…' : 'Add action'))))));
 }
 // ============================================================
 // ROUND-UP MODAL — generates per-recipient mailto links
