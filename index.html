@@ -362,7 +362,13 @@ function weeksBetween(a, b) {
 // WEEK_COUNT = total weeks rendered (8 before current + current + 18 after = 27)
 const WEEKS_BEFORE = 1;
 const WEEKS_TOTAL = 26; // 1 past + current + 24 ahead
-const WEEK_W = 72; // px per week column
+const WEEK_W = 72; // px per week column (default zoom)
+// Zoom presets for the tracker timeline (px per week column).
+const TRACKER_ZOOMS = [
+    { label: 'Compact', w: 44 },
+    { label: 'Standard', w: 72 },
+    { label: 'Wide', w: 104 },
+];
 const LEFT_W = 470; // px for the frozen left panel
 // ── SiteManagerCell — local state so dropdown reflects selection immediately ──
 function SiteManagerCell({ projectId, value, onClick, onUpdate }) {
@@ -391,6 +397,7 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
     const [saving, setSaving] = useState(false);
     const [addKdProjectId, setAddKdProjectId] = useState(null);
     const [kdForm, setKdForm] = useState({ type: 'site-start', date: '' });
+    const [weekW, setWeekW] = useState(WEEK_W);
     const scrollRef = useRef(null);
     const containerRef = useRef(null);
     const today = new Date();
@@ -402,14 +409,14 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
         const measure = () => {
             if (containerRef.current) {
                 const availW = containerRef.current.offsetWidth - LEFT_W;
-                const fitWeeks = Math.max(WEEKS_TOTAL, Math.floor(availW / WEEK_W));
+                const fitWeeks = Math.max(WEEKS_TOTAL, Math.floor(availW / weekW));
                 setWeeksTotal(fitWeeks);
             }
         };
         measure();
         window.addEventListener('resize', measure);
         return () => window.removeEventListener('resize', measure);
-    }, []);
+    }, [weekW]);
     // Build week array: WEEKS_BEFORE weeks before current + weeksTotal weeks total
     const weeks = useMemo(() => {
         return Array.from({ length: weeksTotal }, (_, i) => {
@@ -421,9 +428,9 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
     // Scroll to current week on mount
     useEffect(() => {
         if (scrollRef.current) {
-            scrollRef.current.scrollLeft = WEEKS_BEFORE * WEEK_W - 16;
+            scrollRef.current.scrollLeft = WEEKS_BEFORE * weekW - 16;
         }
-    }, []);
+    }, [weekW]);
     // Filter to contract + on-site projects
     const trackerProjects = useMemo(() => {
         return projects
@@ -479,8 +486,7 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
     const canPM = isSenior || profile.department === 'pm';
     const openEdit = (project) => {
         setEditProject(project);
-        const pmU = project.project_manager_user_id ? users.find(u => u.id === project.project_manager_user_id) : null;
-        setEditForm({ secured: project.secured !== false, pm: (pmU && pmU.initials) || '', siteManager: project.site_manager || '' });
+        setEditForm({ secured: project.secured !== false, pm: project.project_manager_user_id || '', siteManager: project.site_manager || '' });
     };
     const saveEdit = async () => {
         if (!editProject)
@@ -493,11 +499,8 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
         setSaving(true);
         try {
             await onProjectUpdate(projectId, 'secured', savedSecured);
-            // Resolve the picked initials (P1..P12 slot or a real user's initials)
-            // to a user_id; this keeps the home page and the tracker in sync.
-            // If no active user matches the initials, the field becomes NULL.
-            const matched = savedPm ? users.find(u => u.initials === savedPm && u.active !== false) : null;
-            await onProjectUpdate(projectId, 'project_manager_user_id', matched ? matched.id : null);
+            // editForm.pm holds the picked user id directly (strict mode).
+            await onProjectUpdate(projectId, 'project_manager_user_id', savedPm || null);
             // site_manager saved directly — Gantt-only field
             try {
                 await sb.from('projects').update({ site_manager: savedSm || null }).eq('id', projectId);
@@ -591,13 +594,13 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
             return { project, pm, pmColour, secured, startWeek, endWeek, durationWeeks, projWeek, projCompletion, pcDate, milestones, rowBg, siteManager, projectStatus };
         });
     }, [sortedTrackerProjects, kdByProject, weeks, users]);
-    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.grip, padding: '12px 32px', borderBottom: '2px solid ' + C.cord, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.white, fontWeight: 700 } }, "Live Project Tracker"), React.createElement("div", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 } }, trackerProjects.length, " project", trackerProjects.length !== 1 ? 's' : '', " \u00B7 Contract & On-site \u00B7 w/c ", fmtWeek(currentWeekStart))), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' } }, pmList.map(pm => (React.createElement("div", { key: pm.initials, style: { display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.12)', borderRadius: 3, padding: '4px 10px' } }, React.createElement("div", { style: { width: 10, height: 10, borderRadius: 2, background: pm.colour } }), React.createElement("span", { style: { fontSize: 11, color: C.white, fontWeight: 600 } }, pm.name)))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.12)', borderRadius: 3, padding: '4px 10px' } }, React.createElement("div", { style: { width: 10, height: 10, borderRadius: 2, background: '#333' } }), React.createElement("span", { style: { fontSize: 11, color: C.white, fontWeight: 600 } }, "Unallocated")))), React.createElement("div", { style: { display: 'flex', flex: 1 }, ref: containerRef }, React.createElement("div", { style: { width: LEFT_W, flexShrink: 0, borderRight: `3px solid ${C.red}`, background: C.white, zIndex: 5 } }, React.createElement("div", { style: { height: HEADER_H, display: 'grid', gridTemplateColumns: '1fr 80px 44px 96px 44px 80px', alignItems: 'center', padding: '0 10px', background: C.white, borderBottom: `2px solid ${C.line}` } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: C.red } }, "Project"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Status"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Sec."), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Site Mgr"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "PM"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Duration")), trackerProjects.length === 0 ? (React.createElement("div", { style: { padding: '32px 12px', color: C.muted, fontSize: 12 } }, "No projects on site or contract.")) : rowData.map(({ project, pm, pmColour, secured, durationWeeks, rowBg, siteManager, projectStatus }) => (React.createElement("div", { key: project.id, style: { height: ROW_H, display: 'grid', gridTemplateColumns: '1fr 80px 44px 96px 44px 80px', alignItems: 'center', padding: '0 10px', gap: 4, borderBottom: `1px solid ${C.line}`, background: rowBg, cursor: canPM ? 'pointer' : 'default', boxSizing: 'border-box' }, onClick: () => canPM && openEdit(project), title: canPM ? 'Click to edit dates & PM' : '' }, React.createElement("div", { style: { overflow: 'hidden' } }, React.createElement("div", { style: { fontSize: 12, fontWeight: 600, color: C.red, lineHeight: 1.25, wordBreak: 'break-word', overflowWrap: 'anywhere' } }, project.name), React.createElement("div", { style: { fontSize: 10, color: C.muted } }, "#", project.project_number)), React.createElement("div", { style: { textAlign: 'center' } }, React.createElement("span", { style: { display: 'inline-block', padding: '3px 6px', borderRadius: 3, fontSize: 11, fontWeight: 700, background: projectStatus.bg, color: projectStatus.fg, whiteSpace: 'nowrap', maxWidth: 78, overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '0.02em' } }, projectStatus.label)), React.createElement("div", { style: { textAlign: 'center' } }, React.createElement("span", { style: { display: 'inline-block', padding: '3px 6px', borderRadius: 3, fontSize: 11, fontWeight: 700, background: secured ? C.greenLight : '#EEE', color: secured ? C.green : C.muted } }, secured ? 'Y' : 'N')), React.createElement("div", { style: { textAlign: 'center' } }, canPM ? (React.createElement(SiteManagerCell, { projectId: project.id, value: siteManager, onClick: e => e.stopPropagation(), onUpdate: onProjectUpdate })) : (React.createElement("span", { style: { fontSize: 9, color: C.text } }, siteManager || '—'))), React.createElement("div", { style: { textAlign: 'center' } }, pm
+    return (React.createElement(React.Fragment, null, React.createElement("div", { style: { background: C.grip, padding: '12px 32px', borderBottom: '2px solid ' + C.cord, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 } }, React.createElement("div", null, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.white, fontWeight: 700 } }, "Live Project Tracker"), React.createElement("div", { style: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 3 } }, trackerProjects.length, " project", trackerProjects.length !== 1 ? 's' : '', " \u00B7 Contract & On-site \u00B7 w/c ", fmtWeek(currentWeekStart))), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' } }, pmList.map(pm => (React.createElement("div", { key: pm.initials, style: { display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.12)', borderRadius: 3, padding: '4px 10px' } }, React.createElement("div", { style: { width: 10, height: 10, borderRadius: 2, background: pm.colour } }), React.createElement("span", { style: { fontSize: 11, color: C.white, fontWeight: 600 } }, pm.name)))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.12)', borderRadius: 3, padding: '4px 10px' } }, React.createElement("div", { style: { width: 10, height: 10, borderRadius: 2, background: '#333' } }), React.createElement("span", { style: { fontSize: 11, color: C.white, fontWeight: 600 } }, "Unallocated")), React.createElement("div", { style: { display: 'flex', gap: 2, marginLeft: 10, background: 'rgba(255,255,255,0.08)', borderRadius: 3, padding: 2 } }, TRACKER_ZOOMS.map(z => React.createElement("button", { key: z.label, onClick: () => setWeekW(z.w), title: `${z.label} — ${z.w}px per week`, style: { padding: '3px 10px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', border: 'none', borderRadius: 2, cursor: 'pointer', fontFamily: 'inherit', background: weekW === z.w ? C.cord : 'transparent', color: weekW === z.w ? '#fff' : 'rgba(255,255,255,0.55)' } }, z.label))))), React.createElement("div", { style: { display: 'flex', flex: 1 }, ref: containerRef }, React.createElement("div", { style: { width: LEFT_W, flexShrink: 0, borderRight: `3px solid ${C.red}`, background: C.white, zIndex: 5 } }, React.createElement("div", { style: { height: HEADER_H, display: 'grid', gridTemplateColumns: '1fr 80px 44px 96px 44px 80px', alignItems: 'center', padding: '0 10px', background: C.white, borderBottom: `2px solid ${C.line}` } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: C.red } }, "Project"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Status"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Sec."), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Site Mgr"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "PM"), React.createElement("span", { style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: C.muted, textAlign: 'center' } }, "Duration")), trackerProjects.length === 0 ? (React.createElement("div", { style: { padding: '32px 12px', color: C.muted, fontSize: 12 } }, "No projects on site or contract.")) : rowData.map(({ project, pm, pmColour, secured, durationWeeks, rowBg, siteManager, projectStatus }) => (React.createElement("div", { key: project.id, style: { height: ROW_H, display: 'grid', gridTemplateColumns: '1fr 80px 44px 96px 44px 80px', alignItems: 'center', padding: '0 10px', gap: 4, borderBottom: `1px solid ${C.line}`, background: rowBg, cursor: canPM ? 'pointer' : 'default', boxSizing: 'border-box' }, onClick: () => canPM && openEdit(project), title: canPM ? 'Click to edit dates & PM' : '' }, React.createElement("div", { style: { overflow: 'hidden' } }, React.createElement("div", { style: { fontSize: 12, fontWeight: 600, color: C.red, lineHeight: 1.25, wordBreak: 'break-word', overflowWrap: 'anywhere' } }, project.name), React.createElement("div", { style: { fontSize: 10, color: C.muted } }, "#", project.project_number)), React.createElement("div", { style: { textAlign: 'center' } }, React.createElement("span", { style: { display: 'inline-block', padding: '3px 6px', borderRadius: 3, fontSize: 11, fontWeight: 700, background: projectStatus.bg, color: projectStatus.fg, whiteSpace: 'nowrap', maxWidth: 78, overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '0.02em' } }, projectStatus.label)), React.createElement("div", { style: { textAlign: 'center' } }, React.createElement("span", { style: { display: 'inline-block', padding: '3px 6px', borderRadius: 3, fontSize: 11, fontWeight: 700, background: secured ? C.greenLight : '#EEE', color: secured ? C.green : C.muted } }, secured ? 'Y' : 'N')), React.createElement("div", { style: { textAlign: 'center' } }, canPM ? (React.createElement(SiteManagerCell, { projectId: project.id, value: siteManager, onClick: e => e.stopPropagation(), onUpdate: onProjectUpdate })) : (React.createElement("span", { style: { fontSize: 9, color: C.text } }, siteManager || '—'))), React.createElement("div", { style: { textAlign: 'center' } }, pm
         ? React.createElement("span", { style: { display: 'inline-block', padding: '3px 7px', borderRadius: 3, fontSize: 11, fontWeight: 700, background: pmColour, color: C.white } }, pm)
-        : React.createElement("span", { style: { fontSize: 11, color: C.muted } }, "\u2014")), React.createElement("div", { style: { textAlign: 'center', fontSize: 11, color: C.text, fontWeight: 600 } }, durationWeeks ? `${durationWeeks}w` : '—'))))), React.createElement("div", { style: { flex: 1, overflowX: 'auto', overflowY: 'hidden' }, ref: scrollRef }, React.createElement("div", { style: { width: weeksTotal * WEEK_W, minWidth: weeksTotal * WEEK_W } }, React.createElement("div", { style: { display: 'flex', height: HEADER_H, borderBottom: `2px solid ${C.line}`, background: C.white } }, weeks.map((w, i) => {
+        : React.createElement("span", { style: { fontSize: 11, color: C.muted } }, "\u2014")), React.createElement("div", { style: { textAlign: 'center', fontSize: 11, color: C.text, fontWeight: 600 } }, durationWeeks ? `${durationWeeks}w` : '—'))))), React.createElement("div", { style: { flex: 1, overflowX: 'auto', overflowY: 'hidden' }, ref: scrollRef }, React.createElement("div", { style: { width: weeksTotal * weekW, minWidth: weeksTotal * weekW, position: 'relative' } }, React.createElement("div", { title: "Today", style: { position: 'absolute', top: HEADER_H, bottom: 0, left: (WEEKS_BEFORE + Math.min(6, Math.round((today - currentWeekStart) / 86400000)) / 7) * weekW, width: 2, background: C.redStatus, opacity: 0.4, zIndex: 4, pointerEvents: 'none' } }), React.createElement("div", { style: { display: 'flex', height: HEADER_H, borderBottom: `2px solid ${C.line}`, background: C.white } }, weeks.map((w, i) => {
         const isCurr = i === WEEKS_BEFORE;
         const isPast = w < currentWeekStart;
         return (React.createElement("div", { key: i, style: {
-                width: WEEK_W, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: weekW, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 10, fontWeight: isCurr ? 700 : 400,
                 color: isCurr ? C.red : isPast ? C.muted : C.text,
                 background: isCurr ? C.redSoft : 'transparent',
@@ -617,7 +620,7 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
                     : 'repeating-linear-gradient(45deg,#33333366,#33333366 5px,#33333322 5px,#33333322 12px)';
         }
         return (React.createElement("div", { key: i, style: {
-                width: WEEK_W, flexShrink: 0, height: '100%',
+                width: weekW, flexShrink: 0, height: '100%',
                 background: cellBg,
                 borderLeft: `1px solid ${isCurr ? C.redMid : C.line}`,
                 borderRadius: isBarStart && isBarEnd ? 3 : isBarStart ? '3px 0 0 3px' : isBarEnd ? '0 3px 3px 0' : 0,
@@ -626,18 +629,23 @@ function LiveTrackerView({ projects, users, currentUser, profile, isSenior, keyD
 ${formatMeetingDate(projCompletion)}`, x: e.clientX, y: e.clientY }), onMouseLeave: () => setTooltip(null), style: { position: 'absolute', top: '15%', bottom: '15%', right: 5, width: 3, background: 'rgba(255,255,255,0.9)', borderRadius: 2, cursor: 'help', zIndex: 2 } })), milestones.filter(ms => {
             const mw = weeksBetween(weeks[0], getWeekStart(new Date(ms.target_date + 'T00:00:00')));
             return mw === i;
-        }).map(ms => (React.createElement("div", { key: ms.id, onMouseEnter: e => setTooltip({ text: `${ms.event_name}
-${formatMeetingDate(ms.target_date)}`, x: e.clientX, y: e.clientY }), onMouseLeave: () => setTooltip(null), style: {
+        }).map(ms => {
+        const urg = keyDateUrgency(ms.target_date);
+        const mkColour = urg.dot || C.amber;
+        return (React.createElement("div", { key: ms.id, onMouseEnter: e => setTooltip({ text: `${ms.event_name}
+${formatMeetingDate(ms.target_date)}${urg.label ? `
+${urg.label}` : ''}`, x: e.clientX, y: e.clientY }), onMouseLeave: () => setTooltip(null), style: {
                 position: 'absolute', top: '50%', left: '50%',
-                transform: 'translate(-50%,-50%) rotate(45deg)',
-                width: 9, height: 9,
-                background: inBar ? C.white : C.amber,
-                border: `2px solid ${inBar ? 'rgba(0,0,0,0.25)' : C.amber}`,
+                transform: 'translate(-50%,-50%)',
+                width: 16, height: 16,
                 cursor: 'help', zIndex: 3,
-            } })))));
+            } },
+            React.createElement("div", { style: { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%) rotate(45deg)', width: 9, height: 9, background: inBar ? C.white : mkColour, border: `2px solid ${inBar ? 'rgba(0,0,0,0.3)' : mkColour}`, borderRadius: 1, boxShadow: '0 1px 3px rgba(0,0,0,0.25)' } }),
+            weekW >= 100 && React.createElement("div", { style: { position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 1, fontSize: 8, fontWeight: 700, color: inBar ? 'rgba(255,255,255,0.92)' : C.muted, maxWidth: weekW - 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: inBar ? '0 1px 2px rgba(0,0,0,0.45)' : 'none', pointerEvents: 'none', letterSpacing: '0.02em' } }, ms.event_name)));
+    })));
     }), !!(pcDate) && endWeek !== null && endWeek >= 0 && endWeek < weeks.length && (React.createElement("div", { onMouseEnter: e => setTooltip({ text: `PC Date (Contracted)\n${formatMeetingDate(pcDate)}`, x: e.clientX, y: e.clientY }), onMouseLeave: () => setTooltip(null), style: {
             position: 'absolute',
-            left: (endWeek + 1) * WEEK_W - 10,
+            left: (endWeek + 1) * weekW - 10,
             top: '50%', transform: 'translateY(-50%)',
             width: 0, height: 0,
             borderTop: '8px solid transparent',
@@ -648,12 +656,12 @@ ${formatMeetingDate(ms.target_date)}`, x: e.clientX, y: e.clientY }), onMouseLea
         } })), startWeek !== null && endWeek !== null && durationWeeks && durationWeeks >= 2 && (() => {
         const visStart = Math.max(0, startWeek);
         const visEnd = Math.min(endWeek, weeks.length - 1);
-        const visWidth = (visEnd - visStart + 1) * WEEK_W - 8;
+        const visWidth = (visEnd - visStart + 1) * weekW - 8;
         if (visWidth < 40)
             return null;
         return (React.createElement("div", { style: {
                 position: 'absolute',
-                left: visStart * WEEK_W + 2,
+                left: visStart * weekW + 2,
                 top: '50%', transform: 'translateY(-50%)',
                 fontSize: 10, fontWeight: 600,
                 color: secured ? 'rgba(255,255,255,0.95)' : (pmColour || C.text),
@@ -665,8 +673,8 @@ ${formatMeetingDate(ms.target_date)}`, x: e.clientX, y: e.clientY }), onMouseLea
             } }, project.name));
     })(), !pm && startWeek !== null && endWeek !== null && (React.createElement("div", { style: {
             position: 'absolute',
-            left: Math.max(0, startWeek) * WEEK_W,
-            width: (Math.min(endWeek + 1, weeks.length) - Math.max(0, startWeek)) * WEEK_W,
+            left: Math.max(0, startWeek) * weekW,
+            width: (Math.min(endWeek + 1, weeks.length) - Math.max(0, startWeek)) * weekW,
             top: 8, bottom: 8, borderRadius: 3,
             background: '#222', pointerEvents: 'none', zIndex: 1,
         } })))))))), addKdProjectId && (React.createElement("div", { className: "bf-overlay", style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: () => setAddKdProjectId(null) }, React.createElement("div", { className: "bf-modal", onClick: e => e.stopPropagation(), style: { background: C.white, borderRadius: 6, padding: 28, width: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' } }, React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 16 } }, "Set date \u2014 ", (_a = projects.find(p => p.id === addKdProjectId)) === null || _a === void 0 ? void 0 :
@@ -674,11 +682,19 @@ ${formatMeetingDate(ms.target_date)}`, x: e.clientX, y: e.clientY }), onMouseLea
             position: 'absolute', left: 0, top: 0, bottom: 0, width: 380,
             background: C.white, boxShadow: '4px 0 24px rgba(0,0,0,0.12)',
             display: 'flex', flexDirection: 'column',
-        } }, React.createElement("div", { style: { background: C.red, padding: '14px 20px' } }, React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.white } }, editProject.name), React.createElement("div", { style: { fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 } }, "#", editProject.project_number)), React.createElement("div", { style: { flex: 1, overflowY: 'auto', padding: 20 } }, isSenior && (React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, "Secured"), React.createElement("div", { style: { display: 'flex', gap: 8 } }, [true, false].map(v => (React.createElement("button", { key: String(v), onClick: () => setEditForm(p => (Object.assign(Object.assign({}, p), { secured: v }))), style: { flex: 1, padding: '7px 0', borderRadius: 3, border: `2px solid ${editForm.secured === v ? C.red : C.line}`, background: editForm.secured === v ? C.redSoft : C.white, color: editForm.secured === v ? C.red : C.muted, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, v ? 'Yes — Secured' : 'No — Not confirmed')))))), canPM && (React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, "Site Manager"), React.createElement("select", { value: editForm.siteManager || '', onChange: e => setEditForm(p => (Object.assign(Object.assign({}, p), { siteManager: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }, React.createElement("option", { value: "" }, "\u2014 Unassigned"), SITE_MANAGERS.map(sm => React.createElement("option", { key: sm, value: sm }, sm)), editForm.siteManager && !SITE_MANAGERS.includes(editForm.siteManager) && (React.createElement("option", { value: editForm.siteManager }, editForm.siteManager))))), isSenior && (React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, "Project Manager"), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, Object.entries(PM_COLOURS).map(([initials, colour]) => {
-        const pmUser = users.find(u => u.initials === initials);
-        const selected = editForm.pm === initials;
-        return (React.createElement("button", { key: initials, onClick: () => setEditForm(p => (Object.assign(Object.assign({}, p), { pm: initials }))), style: { padding: '5px 12px', borderRadius: 3, border: `2px solid ${selected ? colour : C.line}`, background: selected ? colour : C.white, color: selected ? C.white : C.text, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, initials, pmUser ? ` · ${pmUser.display_name.split(' ')[0]}` : ''));
-    }), React.createElement("button", { onClick: () => setEditForm(p => (Object.assign(Object.assign({}, p), { pm: '' }))), style: { padding: '5px 12px', borderRadius: 3, border: `2px solid ${editForm.pm === '' ? '#222' : C.line}`, background: editForm.pm === '' ? '#222' : C.white, color: editForm.pm === '' ? C.white : C.muted, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, "Unallocated")))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, "Tracker Dates"), TRACKER_KD_TYPES.filter(t => isSenior || !t.seniorOnly).map(t => {
+        } }, React.createElement("div", { style: { background: C.red, padding: '14px 20px' } }, React.createElement("div", { style: { fontSize: 14, fontWeight: 700, color: C.white } }, editProject.name), React.createElement("div", { style: { fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 } }, "#", editProject.project_number)), React.createElement("div", { style: { flex: 1, overflowY: 'auto', padding: 20 } }, isSenior && (React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, "Secured"), React.createElement("div", { style: { display: 'flex', gap: 8 } }, [true, false].map(v => (React.createElement("button", { key: String(v), onClick: () => setEditForm(p => (Object.assign(Object.assign({}, p), { secured: v }))), style: { flex: 1, padding: '7px 0', borderRadius: 3, border: `2px solid ${editForm.secured === v ? C.red : C.line}`, background: editForm.secured === v ? C.redSoft : C.white, color: editForm.secured === v ? C.red : C.muted, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, v ? 'Yes — Secured' : 'No — Not confirmed')))))), canPM && (React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, "Site Manager"), React.createElement("select", { value: editForm.siteManager || '', onChange: e => setEditForm(p => (Object.assign(Object.assign({}, p), { siteManager: e.target.value }))), style: Object.assign(Object.assign({}, inputStyle()), { width: '100%' }) }, React.createElement("option", { value: "" }, "\u2014 Unassigned"), SITE_MANAGERS.map(sm => React.createElement("option", { key: sm, value: sm }, sm)), editForm.siteManager && !SITE_MANAGERS.includes(editForm.siteManager) && (React.createElement("option", { value: editForm.siteManager }, editForm.siteManager))))), isSenior && (React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, "Project Manager"), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, (() => {
+        // Active PM-department users (plus the current assignee if they sit
+        // outside the PM department) — replaces the legacy P1..P12 colour
+        // slots now that project teams are strict FK references (Phase 5a).
+        const pmUsers = users.filter(u => u.active !== false && u.department === 'pm');
+        const current = editForm.pm ? users.find(u => u.id === editForm.pm) : null;
+        const pickable = current && !pmUsers.some(u => u.id === current.id) ? [...pmUsers, current] : pmUsers;
+        return pickable.map(u => {
+            const colour = pmColourFor(u.initials);
+            const selected = editForm.pm === u.id;
+            return (React.createElement("button", { key: u.id, onClick: () => setEditForm(p => (Object.assign(Object.assign({}, p), { pm: u.id }))), style: { padding: '5px 12px', borderRadius: 3, border: `2px solid ${selected ? colour : C.line}`, background: selected ? colour : C.white, color: selected ? C.white : C.text, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, u.initials, ` · ${u.display_name.split(' ')[0]}`));
+        });
+    })(), React.createElement("button", { onClick: () => setEditForm(p => (Object.assign(Object.assign({}, p), { pm: '' }))), style: { padding: '5px 12px', borderRadius: 3, border: `2px solid ${editForm.pm === '' ? '#222' : C.line}`, background: editForm.pm === '' ? '#222' : C.white, color: editForm.pm === '' ? C.white : C.muted, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' } }, "Unallocated")))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 } }, "Tracker Dates"), TRACKER_KD_TYPES.filter(t => isSenior || !t.seniorOnly).map(t => {
         const existing = (keyDates[editProject.id] || []).find(k => k.event_name === t.value && !k.completed);
         return (React.createElement("div", { key: t.value, style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, fontWeight: 600, color: C.text } }, t.label), existing ? (React.createElement("div", { style: { fontSize: 11, color: C.red } }, formatMeetingDate(existing.target_date))) : (React.createElement("div", { style: { fontSize: 11, color: C.muted, fontStyle: 'italic' } }, "Not set"))), React.createElement("button", { onClick: () => {
                 const pid = editProject.id;
@@ -1226,8 +1242,16 @@ function Dashboard({ user, profile, onProfileUpdated }) {
         window.addEventListener('hashchange', onHash);
         return () => window.removeEventListener('hashchange', onHash);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
-    // On state change: write hash → URL stays consistent.
+    // On state change: write hash → URL stays consistent. The first run is
+    // skipped: on a cold load with a deep link, this effect would otherwise
+    // fire with the initial default state and clobber the hash before the
+    // parse effect's state lands.
+    const hashSyncedRef = useRef(false);
     useEffect(() => {
+        if (!hashSyncedRef.current) {
+            hashSyncedRef.current = true;
+            return;
+        }
         writeHash(currentView, currentMeetingId, currentProjectId);
     }, [currentView, currentMeetingId, currentProjectId]);
     // Route guard: the Team view is senior-only. A contributor landing on
