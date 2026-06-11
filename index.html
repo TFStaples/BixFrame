@@ -39,6 +39,14 @@
     text-align: center; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600;
   }
 
+  /* ----- Finish pass: branded selection + thin scrollbars ----- */
+  ::selection { background: rgba(74,155,142,0.25); }
+  * { scrollbar-width: thin; scrollbar-color: #C2DDD9 transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #C2DDD9; border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: #4A9B8E; border: 2px solid transparent; background-clip: content-box; }
+
   /* ----- Motion pass (Phase 2b) — all gated on prefers-reduced-motion ----- */
   @media (prefers-reduced-motion: no-preference) {
     html { scroll-behavior: smooth; }
@@ -262,6 +270,38 @@ const MEETING_TYPE_OPTIONS = [
     { value: 'pm', label: 'Project Manager Meeting', category: 'Resource' },
 ];
 const statusLookup = STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
+// Folder-tab accent per pipeline stage — hues that read on charcoal
+// (ported from the projects-home folder concept).
+const TAB_ACCENT = {
+    lead: '#7FB8AE', pitching: '#5DBFB0', tender: '#E0A23E', won: '#4FB389',
+    contract: '#9BA3A0', 'on-site': '#4A9B8E', lost: '#6B7270', 'handed-over': '#9BA3A0',
+};
+// Overlay org-configured statuses (labels / ordering / custom entries from
+// the Admin → Organisation tab) onto the built-in set. Colours stay with the
+// built-in values; custom statuses get a neutral cord chip. STATUSES and
+// statusLookup are mutated in place so every consumer picks the result up.
+function applyOrgStatuses(rows) {
+    if (!rows || rows.length === 0)
+        return;
+    const byValue = {};
+    STATUSES.forEach(s => { byValue[s.value] = s; });
+    const next = rows
+        .filter(r => r.active !== false)
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+        .map(r => {
+        const builtin = byValue[r.value];
+        if (builtin)
+            return Object.assign(builtin, {
+                label: r.label || builtin.label,
+                short: (r.label && r.label !== builtin.label) ? r.label : builtin.short,
+            });
+        return { value: r.value, label: r.label || r.value, bg: '#EAF4F2', fg: '#357A6E', short: r.label || r.value };
+    });
+    STATUSES.length = 0;
+    next.forEach(s => STATUSES.push(s));
+    Object.keys(statusLookup).forEach(k => delete statusLookup[k]);
+    STATUSES.forEach(s => { statusLookup[s.value] = s; });
+}
 // ============================================================
 // BUILD LATEST NOTES — per-column, not per-row
 // ============================================================
@@ -893,8 +933,9 @@ function LoginScreen() {
         }
     };
     const fieldRow = (label, el) => React.createElement("div", { style: { marginBottom: 14 } }, React.createElement("label", { style: darkLabel }, label), el);
-    return (React.createElement("div", { style: { minHeight: '100vh', background: C.grip, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, position: 'relative', overflow: 'hidden' } },
+    return (React.createElement("div", { onMouseMove: e => { const el = e.currentTarget; el.style.setProperty('--bf-mx', e.clientX + 'px'); el.style.setProperty('--bf-my', e.clientY + 'px'); el.style.setProperty('--bf-glow', '1'); }, style: { minHeight: '100vh', background: C.grip, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, position: 'relative', overflow: 'hidden' } },
         React.createElement("div", { style: { position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(93,191,176,0.16) 1.4px, transparent 1.4px)', backgroundSize: '11px 11px', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.5) 45%, rgba(0,0,0,0) 85%)', maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.5) 45%, rgba(0,0,0,0) 85%)', pointerEvents: 'none' } }),
+        React.createElement("div", { style: { position: 'absolute', inset: 0, opacity: 'var(--bf-glow, 0)', transition: 'opacity 0.4s ease', background: 'radial-gradient(240px circle at var(--bf-mx, 50%) var(--bf-my, 40%), rgba(93,191,176,0.5), transparent 70%)', WebkitMaskImage: 'radial-gradient(circle, #000 1.4px, transparent 1.4px)', maskImage: 'radial-gradient(circle, #000 1.4px, transparent 1.4px)', WebkitMaskSize: '11px 11px', maskSize: '11px 11px', pointerEvents: 'none' } }),
         React.createElement("div", { style: { width: '100%', maxWidth: 380, position: 'relative' } },
             React.createElement("div", { style: { textAlign: 'center', marginBottom: 32 } },
                 React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 46, color: C.fog, fontWeight: 300, letterSpacing: '0.14em', textTransform: 'lowercase', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, gap: 12 } },
@@ -994,6 +1035,12 @@ function Dashboard({ user, profile, onProfileUpdated }) {
                     throw meetingsRes.error;
                 if (notesRes.error)
                     throw notesRes.error;
+                // Org-configured statuses (labels / ordering / custom entries)
+                try {
+                    const { data: stRows } = await sb.from('org_statuses').select('*');
+                    applyOrgStatuses(stRows);
+                }
+                catch (_) { /* fall back to the built-in set */ }
                 // Build latest-notes-per-project, per field independently.
                 const notes = buildLatestNotes(notesRes.data);
                 setProjects(projectsRes.data || []);
@@ -1546,14 +1593,17 @@ function TrackerView({ projects, filteredProjects, users, latestNotes, keyDates,
 // MASTER RESOURCE TRACKER (the table)
 // ============================================================
 function MasterResourceTracker({ projects, users, latestNotes, keyDates, projectActions, projectFlags, isSenior, currentUser, updateProjectField, saveStatus, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting, onOpenProjectDashboard }) {
-    return (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 12 } }, projects.map(project => (React.createElement(ProjectRow, { key: project.id, project: project, users: users, latestNote: latestNotes[project.id], keyDates: keyDates[project.id] || [], projectActions: projectActions.filter(a => a.project_id === project.id), projectFlags: (projectFlags || []).filter(f => f.project_id === project.id), isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, onOpenProjectDashboard: onOpenProjectDashboard, updateField: (field, value) => updateProjectField(project.id, field, value), saveStatus: saveStatus[project.id] })))));
+    return (React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 18 } }, projects.map((project, idx) => (React.createElement(ProjectRow, { key: project.id, idx: idx, project: project, users: users, latestNote: latestNotes[project.id], keyDates: keyDates[project.id] || [], projectActions: projectActions.filter(a => a.project_id === project.id), projectFlags: (projectFlags || []).filter(f => f.project_id === project.id), isSenior: isSenior, currentUser: currentUser, onKeyDatesChange: onKeyDatesChange, onActionsChange: onActionsChange, onNavigate: onNavigate, onOpenMeeting: onOpenMeeting, onOpenProjectDashboard: onOpenProjectDashboard, updateField: (field, value) => updateProjectField(project.id, field, value), saveStatus: saveStatus[project.id] })))));
 }
 // ============================================================
 // PROJECT ROW — two visual rows per project
 // ============================================================
-function ProjectRow({ project, users, latestNote, keyDates, projectActions, projectFlags, isSenior, currentUser, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting, onOpenProjectDashboard, updateField, saveStatus }) {
+function ProjectRow({ project, users, latestNote, keyDates, projectActions, projectFlags, isSenior, currentUser, onKeyDatesChange, onActionsChange, onNavigate, onOpenMeeting, onOpenProjectDashboard, updateField, saveStatus, idx }) {
     const lastUpdater = users.find(u => u.id === project.last_updated_by);
     const [darkHover, setDarkHover] = React.useState(false);
+    const [rowHover, setRowHover] = React.useState(false);
+    const revealRef = useReveal();
+    const tabAccent = TAB_ACCENT[project.status] || C.cord;
     const addedDate = project.created_at ? formatMeetingDate(project.created_at.slice(0, 10)) : null;
     const status = statusLookup[project.status];
     const userById = {};
@@ -1567,9 +1617,13 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
         { label: 'PM', user: resolveTeamMember(project.project_manager_user_id), field: 'project_manager_user_id' },
         { label: 'Furn', user: resolveTeamMember(project.furniture_consultant_user_id), field: 'furniture_consultant_user_id' },
     ];
-    return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '220px 1fr', borderRadius: 5, overflow: 'hidden', border: `1px solid ${C.line}` } }, React.createElement("div", { onMouseEnter: () => setDarkHover(true), onMouseLeave: () => setDarkHover(false), style: { background: C.grip, padding: '16px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden', transition: 'box-shadow 0.18s ease, outline 0.18s ease', outline: darkHover ? `2px solid ${C.cordBright}` : '2px solid transparent', outlineOffset: '-2px', boxShadow: darkHover ? 'inset 0 0 0 9999px rgba(93,191,176,0.06)' : 'none' } }, React.createElement("div", { style: { position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(93,191,176,0.16) 1.3px, transparent 1.3px)', backgroundSize: '10px 10px', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', pointerEvents: 'none' } }), 
+    return (React.createElement("div", { ref: revealRef, className: "bf-reveal", onMouseEnter: () => setRowHover(true), onMouseLeave: () => setRowHover(false), style: { display: 'flex', flexDirection: 'column', position: 'relative', transitionDelay: `${Math.min(idx || 0, 8) * 45}ms` } },
+    React.createElement("div", { onClick: () => onOpenProjectDashboard && onOpenProjectDashboard(project.id), title: "Open project dashboard", style: { position: 'relative', zIndex: 2, marginLeft: 16 + ((idx || 0) % 3) * 132, marginBottom: -2, width: 'fit-content', cursor: 'pointer', background: C.grip, borderTop: `3px solid ${tabAccent}`, borderRadius: '6px 7px 0 0', padding: '4px 18px 7px 14px', display: 'flex', alignItems: 'center', gap: 8 } },
+        React.createElement("span", { style: { width: 7, height: 7, borderRadius: 1, background: tabAccent, flexShrink: 0 } }),
+        React.createElement("span", { style: { fontFamily: "'DM Mono', monospace", fontSize: 11.5, fontWeight: 500, color: (rowHover || darkHover) ? C.cordBright : 'rgba(232,234,232,0.78)', letterSpacing: '0.06em', transition: 'color 0.15s ease' } }, "#", project.project_number || '\u2014')),
+    React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '220px 1fr', borderRadius: 5, overflow: 'hidden', border: `1px solid ${rowHover ? C.cordMid : C.line}`, position: 'relative', zIndex: 1, boxShadow: rowHover ? '0 6px 16px rgba(28,31,30,0.10)' : '0 1px 4px rgba(28,31,30,0.05)', transition: 'box-shadow 0.2s ease, border-color 0.2s ease' } }, React.createElement("div", { onMouseEnter: () => setDarkHover(true), onMouseLeave: () => setDarkHover(false), onMouseMove: e => { const el = e.currentTarget; const r = el.getBoundingClientRect(); el.style.setProperty('--bf-mx', (e.clientX - r.left) + 'px'); el.style.setProperty('--bf-my', (e.clientY - r.top) + 'px'); }, style: { background: C.grip, padding: '16px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden', transition: 'box-shadow 0.18s ease, outline 0.18s ease', outline: darkHover ? `2px solid ${C.cordBright}` : '2px solid transparent', outlineOffset: '-2px', boxShadow: darkHover ? 'inset 0 0 0 9999px rgba(93,191,176,0.06)' : 'none' } }, React.createElement("div", { style: { position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(93,191,176,0.16) 1.3px, transparent 1.3px)', backgroundSize: '10px 10px', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0.45) 50%, rgba(0,0,0,0) 92%)', pointerEvents: 'none' } }), React.createElement("div", { style: { position: 'absolute', inset: 0, opacity: darkHover ? 1 : 0, transition: 'opacity 0.3s ease', background: 'radial-gradient(150px circle at var(--bf-mx, 50%) var(--bf-my, 50%), rgba(93,191,176,0.55), transparent 72%)', WebkitMaskImage: 'radial-gradient(circle, #000 1.3px, transparent 1.3px)', maskImage: 'radial-gradient(circle, #000 1.3px, transparent 1.3px)', WebkitMaskSize: '10px 10px', maskSize: '10px 10px', pointerEvents: 'none' } }), 
     // Expand-to-dashboard icon, top-right of dark panel.
-    onOpenProjectDashboard && React.createElement("button", { onClick: () => onOpenProjectDashboard(project.id), title: "Open project dashboard", style: { position: 'absolute', top: 8, right: 8, zIndex: 2, background: darkHover ? 'rgba(93,191,176,0.18)' : 'transparent', border: `1px solid ${darkHover ? C.cordBright : 'rgba(255,255,255,0.12)'}`, borderRadius: 3, padding: '4px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', transition: 'all 0.15s ease' } }, React.createElement("svg", { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("path", { d: "M14 4h6v6M20 4l-9 9M10 20H4v-6M4 20l9-9", stroke: C.cordBright, strokeWidth: 2.4, strokeLinecap: "round", strokeLinejoin: "round" })), darkHover && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.cordBright } }, "Open")), React.createElement("div", { style: { position: 'relative', zIndex: 1 } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.fog, lineHeight: 1.3, wordBreak: 'break-word', overflowWrap: 'anywhere' } }, project.name || 'Untitled project'), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 } }, React.createElement("span", { style: { fontSize: 11, fontWeight: 700, color: 'rgba(232,234,232,0.55)', fontFamily: "'DM Mono', monospace" } }, "#"), React.createElement("span", { style: { fontSize: 12, fontWeight: 500, color: 'rgba(232,234,232,0.7)', fontFamily: "'DM Mono', monospace" } }, project.project_number || '\u2014'), React.createElement(SaveIndicator, { status: saveStatus, light: true })), project.address ? React.createElement("div", { style: { fontSize: 10.5, color: 'rgba(232,234,232,0.62)', marginTop: 6 } }, project.address) : null, project.address && React.createElement("a", { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(project.address)}`, target: "_blank", rel: "noopener noreferrer", style: { display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, color: C.cordBright, textDecoration: 'none', marginTop: 4, opacity: 0.85 } }, "\u2197 View on map")), React.createElement("div", { style: { marginTop: 12, position: 'relative', zIndex: 1 } }, React.createElement("div", { style: { fontSize: 8, color: 'rgba(232,234,232,0.5)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid rgba(255,255,255,0.1)' } }, "Project Team"), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 } }, teamMembers.map(({ label, user, field }) => {
+    onOpenProjectDashboard && React.createElement("button", { onClick: () => onOpenProjectDashboard(project.id), title: "Open project dashboard", style: { position: 'absolute', top: 8, right: 8, zIndex: 2, background: darkHover ? 'rgba(93,191,176,0.18)' : 'transparent', border: `1px solid ${darkHover ? C.cordBright : 'rgba(255,255,255,0.12)'}`, borderRadius: 3, padding: '4px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', transition: 'all 0.15s ease' } }, React.createElement("svg", { width: 11, height: 11, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("path", { d: "M14 4h6v6M20 4l-9 9M10 20H4v-6M4 20l9-9", stroke: C.cordBright, strokeWidth: 2.4, strokeLinecap: "round", strokeLinejoin: "round" })), darkHover && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.cordBright } }, "Open")), React.createElement("div", { style: { position: 'relative', zIndex: 1 } }, React.createElement("div", { style: { fontSize: 15, fontWeight: 600, color: C.fog, lineHeight: 1.3, wordBreak: 'break-word', overflowWrap: 'anywhere' } }, project.name || 'Untitled project'), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 } }, React.createElement(SaveIndicator, { status: saveStatus, light: true })), project.address ? React.createElement("div", { style: { fontSize: 10.5, color: 'rgba(232,234,232,0.62)', marginTop: 6 } }, project.address) : null, project.address && React.createElement("a", { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(project.address)}`, target: "_blank", rel: "noopener noreferrer", style: { display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, color: C.cordBright, textDecoration: 'none', marginTop: 4, opacity: 0.85 } }, "\u2197 View on map")), React.createElement("div", { style: { marginTop: 12, position: 'relative', zIndex: 1 } }, React.createElement("div", { style: { fontSize: 8, color: 'rgba(232,234,232,0.5)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid rgba(255,255,255,0.1)' } }, "Project Team"), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 } }, teamMembers.map(({ label, user, field }) => {
         const value = user ? user.initials : '';
         return (React.createElement("div", { key: field, title: user ? `${user.display_name}${user.department ? ' \u00B7 ' + user.department : ''}` : 'Unassigned', style: {
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
@@ -1631,7 +1685,7 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
         };
         return (React.createElement("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 } }, cols.map((col, i) => (React.createElement("div", { key: col.label }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3, minHeight: 20 } }, React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: colActions[i].length > 0 ? C.red : C.muted } }, col.label), colActions[i].length > 0 && (React.createElement(ActionIndicatorBadge, { actions: colActions[i], users: users, columnLabel: col.label, onActionToggle: handleActionToggle, onNavigate: onNavigate })), colFlags[i].length > 0 && (React.createElement("button", { onClick: () => { const f = colFlags[i][0]; if (f && f.from_meeting_id && onOpenMeeting)
                 onOpenMeeting(f.from_meeting_id); }, title: `${colFlags[i].length} open flag${colFlags[i].length !== 1 ? 's' : ''} raised by ${col.label} for another team — click to view the meeting`, style: { display: 'inline-flex', alignItems: 'center', gap: 2, padding: '1px 6px', borderRadius: 10, border: `1px solid ${C.cordMid}`, background: C.cordSoft, color: C.cord, fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif", lineHeight: 1.4 }, onMouseEnter: e => e.currentTarget.style.background = C.cordMid, onMouseLeave: e => e.currentTarget.style.background = C.cordSoft }, `\u2691 ${colFlags[i].length}`))), React.createElement(NoteCell, { label: "", value: col.value, placeholder: "No notes yet" }))))));
-    })(), (keyDates && keyDates.length > 0) || isSenior ? (React.createElement("div", { style: { marginTop: 10 } }, isSenior && currentUser ? (React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange, compact: true })) : (React.createElement(ContributorKeyDates, { keyDates: keyDates || [], project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: onActionsChange })))) : null, (latestNote === null || latestNote === void 0 ? void 0 : latestNote.meeting_date) && (React.createElement("div", { style: { fontSize: 10, color: C.muted, fontStyle: 'italic', marginTop: 8 } }, "Last updated ", formatMeetingDate(latestNote.meeting_date))))));
+    })(), (keyDates && keyDates.length > 0) || isSenior ? (React.createElement("div", { style: { marginTop: 10 } }, isSenior && currentUser ? (React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange, compact: true })) : (React.createElement(ContributorKeyDates, { keyDates: keyDates || [], project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: onActionsChange })))) : null, (latestNote === null || latestNote === void 0 ? void 0 : latestNote.meeting_date) && (React.createElement("div", { style: { fontSize: 10, color: C.muted, fontStyle: 'italic', marginTop: 8 } }, "Last updated ", formatMeetingDate(latestNote.meeting_date)))))));
 }
 // ============================================================
 // CONTRIBUTOR KEY DATES — read-only chips with toggle for closed
@@ -2607,7 +2661,7 @@ function AdminView({ currentUser, profile, users, onUsersChanged, onNavigate }) 
                         React.createElement("button", { onClick: () => revokeInvite(inv), style: { background: 'transparent', border: 'none', color: C.redStatus, cursor: 'pointer', fontSize: 10.5, fontWeight: 600, textDecoration: 'underline', fontFamily: 'inherit' } }, "Revoke"))))),
             React.createElement("div", { style: { fontSize: 11, color: C.mist, fontStyle: 'italic' } }, "Display names and initials are edited by each person on their profile, or via the profile editor in the header.")),
         tab === 'organisation' && React.createElement(React.Fragment, null,
-            React.createElement("div", { style: { padding: '10px 14px', background: C.amberLight, border: `1px solid ${C.amber}`, borderLeft: `3px solid ${C.amber}`, borderRadius: 4, fontSize: 12, color: '#7A5E12', marginBottom: 18 } }, "These tables drive configuration org-wide. The pipeline board still renders its built-in status set until a later phase reads custom entries everywhere — labels and ordering you change here apply wherever the config tables are read."),
+            React.createElement("div", { style: { padding: '10px 14px', background: C.amberLight, border: `1px solid ${C.amber}`, borderLeft: `3px solid ${C.amber}`, borderRadius: 4, fontSize: 12, color: '#7A5E12', marginBottom: 18 } }, "These tables drive configuration org-wide. Status labels, ordering and custom entries now feed the pipeline and status pickers directly (refresh to see changes); stage colours stay curated per built-in value, with custom statuses in a neutral cord chip."),
             React.createElement(AdminConfigTable, { title: "Pipeline statuses", hint: "The stages a project moves through.", table: "org_statuses", rows: statuses, extraCols: (r) => r.is_closed && React.createElement("span", { style: { marginLeft: 6, fontSize: 8.5, fontWeight: 700, color: C.muted, background: C.bg, border: `1px solid ${C.line}`, padding: '1px 6px', borderRadius: 8, textTransform: 'uppercase' } }, "closed"), onReload: reload }),
             React.createElement(AdminConfigTable, { title: "Departments", hint: "Teams people belong to — drives pickers, meeting seeding and filters.", table: "org_departments", rows: departments, extraCols: null, onReload: reload }),
             React.createElement(AdminConfigTable, { title: "Key date categories", hint: "Categories for project key dates and tracker milestones.", table: "org_key_date_categories", rows: kdCats, extraCols: (r) => r.is_programme_driver && React.createElement("span", { style: { marginLeft: 6, fontSize: 8.5, fontWeight: 700, color: C.cord, background: C.cordSoft, padding: '1px 6px', borderRadius: 8, textTransform: 'uppercase' } }, "programme"), onReload: reload })),
