@@ -83,6 +83,9 @@
     .bf-folder-peek, .bf-dot-glow, .bf-drawer-hint { display: none !important; }
     .bf-folder-face { height: auto !important; min-height: 0 !important; padding: 10px 14px 12px !important; }
     .bf-page h1 { font-size: 17px !important; }
+    /* Admin tables: scroll sideways instead of crushing off-screen */
+    .bf-scrollx { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+    .bf-scrollx > div { min-width: 560px; }
   }
   @media (max-width: 480px) {
     .bf-notes-grid { grid-template-columns: 1fr !important; }
@@ -318,6 +321,12 @@ const MEETING_TYPE_OPTIONS = [
     { value: 'furniture', label: 'Furniture Meeting', category: 'Resource' },
     { value: 'pm', label: 'Project Manager Meeting', category: 'Resource' },
 ];
+// Meeting types follow their department: disabled team -> no meeting type.
+function enabledMeetingTypeOptions() {
+    return MEETING_TYPE_OPTIONS
+        .filter(o => deptEnabled(o.value))
+        .map(o => Object.assign({}, o, { label: deptLabel(o.value, o.label.replace(' Meeting', '')) + ' Meeting' }));
+}
 const statusLookup = STATUSES.reduce((acc, s) => { acc[s.value] = s; return acc; }, {});
 // Folder-tab accent per pipeline stage — hues that read on charcoal
 // (ported from the projects-home folder concept).
@@ -350,6 +359,45 @@ function applyOrgStatuses(rows) {
     next.forEach(s => STATUSES.push(s));
     Object.keys(statusLookup).forEach(k => delete statusLookup[k]);
     STATUSES.forEach(s => { statusLookup[s.value] = s; });
+}
+// Department value -> the app surfaces it owns. Disabling a department in
+// Admin removes its team picker, note column and meeting type everywhere.
+const DEPT_BINDINGS = {
+    'pre-con': { teamField: 'pre_con_lead_user_id', noteField: 'pre_con_note', meetingType: 'pre-con' },
+    'design': { teamField: 'designer_user_id', noteField: 'design_note', meetingType: 'design' },
+    'technical': { teamField: 'technical_designer_user_id', noteField: 'technical_note', meetingType: 'technical' },
+    'furniture': { teamField: 'furniture_consultant_user_id', noteField: 'furniture_note', meetingType: 'furniture' },
+    'graphic': { teamField: null, noteField: 'graphic_note', meetingType: null },
+    'pm': { teamField: 'project_manager_user_id', noteField: null, meetingType: 'pm' },
+};
+let ORG_DEPTS = null; // null until loaded -> everything enabled
+function applyOrgDepartments(rows) {
+    if (rows && rows.length > 0)
+        ORG_DEPTS = rows;
+}
+function deptEnabled(value) {
+    if (!ORG_DEPTS || !value)
+        return true;
+    const d = ORG_DEPTS.find(x => x.value === value);
+    return d ? d.active !== false : true;
+}
+function deptLabel(value, fallback) {
+    const d = ORG_DEPTS && ORG_DEPTS.find(x => x.value === value);
+    return (d && d.label) || fallback;
+}
+function teamFieldEnabled(field) {
+    if (!field || field === 'owner_user_id')
+        return true;
+    const entry = Object.entries(DEPT_BINDINGS).find(([, b]) => b.teamField === field);
+    return entry ? deptEnabled(entry[0]) : true;
+}
+function noteFieldEnabled(field) {
+    const entry = Object.entries(DEPT_BINDINGS).find(([, b]) => b.noteField === field);
+    return entry ? deptEnabled(entry[0]) : true;
+}
+function getMeetingCfg(type) {
+    const base = MEETING_TYPES[type] || { short: type, label: type, secondaryNotes: [] };
+    return Object.assign(Object.assign({}, base), { secondaryNotes: (base.secondaryNotes || []).filter(n => noteFieldEnabled(n.field)) });
 }
 // ============================================================
 // BUILD LATEST NOTES — per-column, not per-row
@@ -1090,6 +1138,8 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     const [profileTargetUserId, setProfileTargetUserId] = useState(null); // null = editing self
     const isMobile = useIsMobile();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [orgName, setOrgName] = useState('');
+    useEffect(() => { if (orgName) document.title = orgName + ' \u00B7 BixFrame'; }, [orgName]);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('active');
     const [ownerFilter, setOwnerFilter] = useState('');
@@ -1123,10 +1173,17 @@ function Dashboard({ user, profile, onProfileUpdated }) {
                     throw meetingsRes.error;
                 if (notesRes.error)
                     throw notesRes.error;
-                // Org-configured statuses (labels / ordering / custom entries)
+                // Org-configured statuses / departments / identity
                 try {
-                    const { data: stRows } = await sb.from('org_statuses').select('*');
-                    applyOrgStatuses(stRows);
+                    const [stRes, deptRes, orgRes] = await Promise.all([
+                        sb.from('org_statuses').select('*'),
+                        sb.from('org_departments').select('*'),
+                        sb.from('organisations').select('name').limit(1),
+                    ]);
+                    applyOrgStatuses(stRes.data);
+                    applyOrgDepartments(deptRes.data);
+                    if (orgRes.data && orgRes.data[0] && orgRes.data[0].name)
+                        setOrgName(orgRes.data[0].name);
                 }
                 catch (_) { /* fall back to the built-in set */ }
                 // Build latest-notes-per-project, per field independently.
@@ -1544,7 +1601,7 @@ function Dashboard({ user, profile, onProfileUpdated }) {
     if (error) {
         return (React.createElement("div", { style: { minHeight: '100vh', background: C.bg, padding: 40, textAlign: 'center' } }, React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 16, borderRadius: 6, maxWidth: 600, margin: '0 auto', borderLeft: `3px solid ${C.redStatus}` } }, "Failed to load: ", error), React.createElement("button", { onClick: signOut, style: Object.assign(Object.assign({}, btnSecondary()), { marginTop: 16 }) }, "Sign out and retry")));
     }
-    return (React.createElement("div", { style: { minHeight: '100vh', background: '#F4F3F1', color: C.text } }, React.createElement("header", { style: { background: C.grip, borderBottom: `2px solid ${C.gripBorder}`, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 52 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', alignItems: 'center', lineHeight: 1, gap: 6 } }, React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "["), React.createElement("span", null, "bixframe"), React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "]")), !isMobile && React.createElement("nav", { style: { display: 'flex', gap: 2 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), isSenior && React.createElement(ViewTab, { label: "Team", active: currentView === 'team', onClick: () => setCurrentView('team') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement(NotificationsBell, { currentUser: user, onNavigate: (v) => setCurrentView(v) }), !isMobile && isSenior && React.createElement("button", { onClick: () => setCurrentView('admin'), title: "Organisation admin", style: { background: currentView === 'admin' ? 'rgba(93,191,176,0.12)' : 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3, padding: '5px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center' }, onMouseEnter: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)', onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none" }, React.createElement("circle", { cx: 12, cy: 12, r: 3.2, stroke: C.cordBright, strokeWidth: 2 }), React.createElement("path", { d: "M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1", stroke: C.cordBright, strokeWidth: 2, strokeLinecap: "round" }))), !isMobile && React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }, onMouseEnter: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)', onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.cordBright, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.cordBright, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: 'rgba(232,234,232,0.85)' } }, profile.display_name), React.createElement("span", { style: { fontSize: 10, color: 'rgba(232,234,232,0.4)' } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), !isMobile && React.createElement("button", { onClick: signOut, style: { padding: '5px 12px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(232,234,232,0.5)', fontFamily: 'inherit', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 3, cursor: 'pointer' } }, "Sign out"), isMobile && React.createElement("button", { onClick: () => setMobileMenuOpen(o => !o), "aria-label": "Menu", style: { background: mobileMenuOpen ? 'rgba(93,191,176,0.15)' : 'transparent', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 3, padding: '6px 8px', cursor: 'pointer', display: 'flex' } }, React.createElement("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none" }, React.createElement("path", { d: "M4 6h16M4 12h16M4 18h16", stroke: C.cordBright, strokeWidth: 2.4, strokeLinecap: "round" }))))), isMobile && mobileMenuOpen && React.createElement(React.Fragment, null,
+    return (React.createElement("div", { style: { minHeight: '100vh', background: '#F4F3F1', color: C.text } }, React.createElement("header", { style: { background: C.grip, borderBottom: `2px solid ${C.gripBorder}`, padding: '0 28px', position: 'sticky', top: 0, zIndex: 10, height: 52 } }, React.createElement("div", { style: { maxWidth: 1600, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '100%' } }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 24 } }, React.createElement("div", { style: { fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 19, color: C.fog, fontWeight: 300, letterSpacing: '0.13em', textTransform: 'lowercase', display: 'flex', alignItems: 'center', lineHeight: 1, gap: 6 } }, React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "["), React.createElement("span", null, "bixframe"), React.createElement("span", { style: { color: C.cord, fontWeight: 400 } }, "]")), orgName && React.createElement("span", { style: { width: 1, height: 18, background: 'rgba(255,255,255,0.18)', flexShrink: 0 } }), orgName && React.createElement("span", { title: orgName, style: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(232,234,232,0.85)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? '34vw' : 260 } }, orgName), !isMobile && React.createElement("nav", { style: { display: 'flex', gap: 2 } }, React.createElement(ViewTab, { label: "Projects", active: currentView === 'tracker', onClick: () => setCurrentView('tracker') }), React.createElement(ViewTab, { label: "Meetings", active: currentView === 'meetings' || currentView === 'meeting-detail', onClick: () => setCurrentView('meetings') }), React.createElement(ViewTab, { label: "My Actions", active: currentView === 'my-actions', onClick: () => setCurrentView('my-actions') }), React.createElement(ViewTab, { label: "Live Tracker", active: currentView === 'live-tracker', onClick: () => setCurrentView('live-tracker') }), isSenior && React.createElement(ViewTab, { label: "Team", active: currentView === 'team', onClick: () => setCurrentView('team') }))), React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 12 } }, React.createElement(NotificationsBell, { currentUser: user, onNavigate: (v) => setCurrentView(v) }), !isMobile && isSenior && React.createElement("button", { onClick: () => setCurrentView('admin'), title: "Organisation admin", style: { background: currentView === 'admin' ? 'rgba(93,191,176,0.12)' : 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3, padding: '5px 9px', cursor: 'pointer', display: 'flex', alignItems: 'center' }, onMouseEnter: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)', onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none" }, React.createElement("circle", { cx: 12, cy: 12, r: 3.2, stroke: C.cordBright, strokeWidth: 2 }), React.createElement("path", { d: "M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1", stroke: C.cordBright, strokeWidth: 2, strokeLinecap: "round" }))), !isMobile && React.createElement("button", { onClick: () => { setProfileTargetUserId(null); setShowProfile(true); }, title: "Edit profile", style: { background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 3, padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }, onMouseEnter: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)', onMouseLeave: e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)' }, React.createElement("svg", { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", style: { flexShrink: 0 } }, React.createElement("circle", { cx: 12, cy: 8, r: 3.5, stroke: C.cordBright, strokeWidth: 2 }), React.createElement("path", { d: "M5 19c0-3.3 3.1-6 7-6s7 2.7 7 6", stroke: C.cordBright, strokeWidth: 2, strokeLinecap: "round" })), React.createElement("span", { style: { fontSize: 11, fontWeight: 500, color: 'rgba(232,234,232,0.85)' } }, profile.display_name), React.createElement("span", { style: { fontSize: 10, color: 'rgba(232,234,232,0.4)' } }, profile.role === 'senior' ? 'Senior' : 'Contributor')), !isMobile && React.createElement("button", { onClick: signOut, style: { padding: '5px 12px', border: '1px solid rgba(255,255,255,0.12)', background: 'transparent', color: 'rgba(232,234,232,0.5)', fontFamily: 'inherit', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 3, cursor: 'pointer' } }, "Sign out"), isMobile && React.createElement("button", { onClick: () => setMobileMenuOpen(o => !o), "aria-label": "Menu", style: { background: mobileMenuOpen ? 'rgba(93,191,176,0.15)' : 'transparent', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 3, padding: '6px 8px', cursor: 'pointer', display: 'flex' } }, React.createElement("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none" }, React.createElement("path", { d: "M4 6h16M4 12h16M4 18h16", stroke: C.cordBright, strokeWidth: 2.4, strokeLinecap: "round" }))))), isMobile && mobileMenuOpen && React.createElement(React.Fragment, null,
         React.createElement("div", { onClick: () => setMobileMenuOpen(false), style: { position: 'fixed', top: 52, left: 0, right: 0, bottom: 0, zIndex: 39, background: 'rgba(20,22,21,0.45)' } }),
         React.createElement("div", { style: { position: 'fixed', top: 52, left: 0, right: 0, zIndex: 40, background: C.grip, borderBottom: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 18px 30px rgba(0,0,0,0.4)', padding: '8px 12px 12px' } },
             [['tracker', 'Projects'], ['meetings', 'Meetings'], ['my-actions', 'My Actions'], ['live-tracker', 'Live Tracker']].concat(isSenior ? [['team', 'Team'], ['admin', 'Org settings']] : []).map(([v, lbl]) => React.createElement("button", { key: v, onClick: () => { setCurrentView(v); setMobileMenuOpen(false); }, style: { display: 'block', width: '100%', textAlign: 'left', padding: '11px 10px', background: currentView === v ? 'rgba(93,191,176,0.12)' : 'transparent', border: 'none', borderRadius: 4, color: currentView === v ? C.cordBright : 'rgba(232,234,232,0.85)', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' } }, lbl)),
@@ -1705,9 +1762,11 @@ function drawerHeadline(latestNote) {
     if (!latestNote)
         return null;
     for (const [key, label] of DRAWER_NOTE_FIELDS) {
+        if (!noteFieldEnabled(key))
+            continue;
         const v = latestNote[key];
         if (v && String(v).trim())
-            return { label, text: String(v).trim() };
+            return { label: deptLabel(Object.keys(DEPT_BINDINGS).find(d => DEPT_BINDINGS[d].noteField === key), label), text: String(v).trim() };
     }
     return null;
 }
@@ -1793,12 +1852,12 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
     const resolveTeamMember = (userId) => userId ? userById[userId] || null : null;
     const teamMembers = [
         { label: 'Owner', user: resolveTeamMember(project.owner_user_id), field: 'owner_user_id' },
-        { label: 'Pre-Con', user: resolveTeamMember(project.pre_con_lead_user_id), field: 'pre_con_lead_user_id' },
-        { label: 'Design', user: resolveTeamMember(project.designer_user_id), field: 'designer_user_id' },
-        { label: 'Tech', user: resolveTeamMember(project.technical_designer_user_id), field: 'technical_designer_user_id' },
-        { label: 'PM', user: resolveTeamMember(project.project_manager_user_id), field: 'project_manager_user_id' },
-        { label: 'Furn', user: resolveTeamMember(project.furniture_consultant_user_id), field: 'furniture_consultant_user_id' },
-    ];
+        { label: deptLabel('pre-con', 'Pre-Con'), user: resolveTeamMember(project.pre_con_lead_user_id), field: 'pre_con_lead_user_id' },
+        { label: deptLabel('design', 'Design'), user: resolveTeamMember(project.designer_user_id), field: 'designer_user_id' },
+        { label: deptLabel('technical', 'Tech'), user: resolveTeamMember(project.technical_designer_user_id), field: 'technical_designer_user_id' },
+        { label: deptLabel('pm', 'PM'), user: resolveTeamMember(project.project_manager_user_id), field: 'project_manager_user_id' },
+        { label: deptLabel('furniture', 'Furn'), user: resolveTeamMember(project.furniture_consultant_user_id), field: 'furniture_consultant_user_id' },
+    ].filter(m => teamFieldEnabled(m.field));
     return (React.createElement("div", { ref: revealRef, className: "bf-reveal", onMouseEnter: () => setRowHover(true), onMouseLeave: () => setRowHover(false), style: { display: 'flex', flexDirection: 'column', position: 'relative', transitionDelay: `${Math.min(idx || 0, 8) * 45}ms` } },
     React.createElement("div", { onClick: () => onOpenProjectDashboard && onOpenProjectDashboard(project.id), title: "Open project dashboard", style: { position: 'relative', zIndex: 2, marginLeft: 16 + ((idx || 0) % 3) * 132, marginBottom: -2, width: 'fit-content', cursor: 'pointer', background: C.grip, borderTop: `3px solid ${tabAccent}`, borderRadius: '6px 7px 0 0', padding: '4px 18px 7px 14px', display: 'flex', alignItems: 'center', gap: 8 } },
         React.createElement("span", { style: { width: 7, height: 7, borderRadius: 1, background: tabAccent, flexShrink: 0 } }),
@@ -1824,12 +1883,12 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
         const today = new Date().toISOString().slice(0, 10);
         // Map note columns to project team user_id fields
         const cols = [
-            { label: 'Pre-con', value: latestNote === null || latestNote === void 0 ? void 0 : latestNote.pre_con_note, userIdField: 'pre_con_lead_user_id' },
-            { label: 'Design', value: latestNote === null || latestNote === void 0 ? void 0 : latestNote.design_note, userIdField: 'designer_user_id' },
-            { label: 'Technical', value: latestNote === null || latestNote === void 0 ? void 0 : latestNote.technical_note, userIdField: 'technical_designer_user_id' },
-            { label: 'Furniture', value: latestNote === null || latestNote === void 0 ? void 0 : latestNote.furniture_note, userIdField: 'furniture_consultant_user_id' },
-            { label: 'Graphic', value: latestNote === null || latestNote === void 0 ? void 0 : latestNote.graphic_note, userIdField: null },
-        ];
+            { label: deptLabel('pre-con', 'Pre-con'), noteField: 'pre_con_note', value: latestNote === null || latestNote === void 0 ? void 0 : latestNote.pre_con_note, userIdField: 'pre_con_lead_user_id' },
+            { label: deptLabel('design', 'Design'), noteField: 'design_note', value: latestNote === null || latestNote === void 0 ? void 0 : latestNote.design_note, userIdField: 'designer_user_id' },
+            { label: deptLabel('technical', 'Technical'), noteField: 'technical_note', value: latestNote === null || latestNote === void 0 ? void 0 : latestNote.technical_note, userIdField: 'technical_designer_user_id' },
+            { label: deptLabel('furniture', 'Furniture'), noteField: 'furniture_note', value: latestNote === null || latestNote === void 0 ? void 0 : latestNote.furniture_note, userIdField: 'furniture_consultant_user_id' },
+            { label: deptLabel('graphic', 'Graphic'), noteField: 'graphic_note', value: latestNote === null || latestNote === void 0 ? void 0 : latestNote.graphic_note, userIdField: null },
+        ].filter(c => noteFieldEnabled(c.noteField));
         // For each column, find actions owned by the user filling that role.
         const colActions = cols.map(col => {
             if (!col.userIdField)
@@ -1865,7 +1924,7 @@ function ProjectRow({ project, users, latestNote, keyDates, projectActions, proj
                 console.error(e);
             }
         };
-        return (React.createElement("div", { className: "bf-notes-grid", style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 } }, cols.map((col, i) => (React.createElement("div", { key: col.label }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3, minHeight: 20 } }, React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: colActions[i].length > 0 ? C.red : C.muted } }, col.label), colActions[i].length > 0 && (React.createElement(ActionIndicatorBadge, { actions: colActions[i], users: users, columnLabel: col.label, onActionToggle: handleActionToggle, onNavigate: onNavigate })), colFlags[i].length > 0 && (React.createElement("button", { onClick: () => { const f = colFlags[i][0]; if (f && f.from_meeting_id && onOpenMeeting)
+        return (React.createElement("div", { className: "bf-notes-grid", style: { display: 'grid', gridTemplateColumns: `repeat(${cols.length}, 1fr)`, gap: 8 } }, cols.map((col, i) => (React.createElement("div", { key: col.label }, React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3, minHeight: 20 } }, React.createElement("span", { style: { fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: colActions[i].length > 0 ? C.red : C.muted } }, col.label), colActions[i].length > 0 && (React.createElement(ActionIndicatorBadge, { actions: colActions[i], users: users, columnLabel: col.label, onActionToggle: handleActionToggle, onNavigate: onNavigate })), colFlags[i].length > 0 && (React.createElement("button", { onClick: () => { const f = colFlags[i][0]; if (f && f.from_meeting_id && onOpenMeeting)
                 onOpenMeeting(f.from_meeting_id); }, title: `${colFlags[i].length} open flag${colFlags[i].length !== 1 ? 's' : ''} raised by ${col.label} for another team — click to view the meeting`, style: { display: 'inline-flex', alignItems: 'center', gap: 2, padding: '1px 6px', borderRadius: 10, border: `1px solid ${C.cordMid}`, background: C.cordSoft, color: C.cord, fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif", lineHeight: 1.4 }, onMouseEnter: e => e.currentTarget.style.background = C.cordMid, onMouseLeave: e => e.currentTarget.style.background = C.cordSoft }, `\u2691 ${colFlags[i].length}`))), React.createElement(NoteCell, { label: "", value: col.value, placeholder: "No notes yet" }))))));
     })(), (keyDates && keyDates.length > 0) || isSenior ? (React.createElement("div", { style: { marginTop: 10 } }, isSenior && currentUser ? (React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, onKeyDatesChange: onKeyDatesChange, compact: true })) : (React.createElement(ContributorKeyDates, { keyDates: keyDates || [], project: project, users: users, currentUser: currentUser, isSenior: isSenior, onActionsChange: onActionsChange })))) : null, (latestNote === null || latestNote === void 0 ? void 0 : latestNote.meeting_date) && (React.createElement("div", { style: { fontSize: 10, color: C.muted, fontStyle: 'italic', marginTop: 8 } }, "Last updated ", formatMeetingDate(latestNote.meeting_date)))))));
 }
@@ -2507,7 +2566,7 @@ function MyActionCard({ action, project, meeting, today, accentColour, onToggle,
     const isOverdue = !isClosed && action.due_date && action.due_date < today;
     const priority = action.priority || 'normal';
     const isHighPriority = priority === 'high' || priority === 'urgent';
-    const meetingCfg = meeting ? (MEETING_TYPES[meeting.meeting_type] || { short: meeting.meeting_type }) : null;
+    const meetingCfg = meeting ? getMeetingCfg(meeting.meeting_type) : null;
     const [showCloseForm, setShowCloseForm] = useState(false);
     const [closeNote, setCloseNote] = useState('');
     // Collaborator cards: no close authority, owner displayed prominently.
@@ -2661,8 +2720,23 @@ function AdminConfigTable({ title, hint, table, rows, extraCols, onReload }) {
         }
         setBusyId(null);
     };
+    const remove = async (r) => {
+        if (!window.confirm(`Remove "${r.label || r.value}"? It disappears from boards and pickers; anything already saved with this value keeps it.`))
+            return;
+        setBusyId(r.id);
+        try {
+            const { error } = await sb.from(table).delete().eq('id', r.id);
+            if (error)
+                throw error;
+            await onReload();
+        }
+        catch (e) {
+            alert('Delete failed: ' + e.message);
+        }
+        setBusyId(null);
+    };
     const sorted = [...rows].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-    return React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 5, marginBottom: 18, overflow: 'hidden' } },
+    return React.createElement("div", { className: "bf-scrollx", style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 5, marginBottom: 18, overflow: 'hidden' } },
         React.createElement("div", { style: { padding: '12px 16px', borderBottom: `2px solid ${C.cord}`, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' } },
             React.createElement("div", null,
                 React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: C.ink, textTransform: 'uppercase', letterSpacing: '0.08em' } }, title),
@@ -2672,13 +2746,13 @@ function AdminConfigTable({ title, hint, table, rows, extraCols, onReload }) {
                 React.createElement("button", { onClick: add, disabled: busyId === 'new' || !newLabel.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { fontSize: 11, opacity: newLabel.trim() ? 1 : 0.4 }) }, "+ Add"))),
         React.createElement("div", null, sorted.map(r => {
             const locked = r.is_system === true;
-            return React.createElement("div", { key: r.id, style: { display: 'grid', gridTemplateColumns: '1fr 140px 70px 110px', gap: 10, alignItems: 'center', padding: '8px 16px', borderBottom: `1px solid ${C.line}`, opacity: r.active === false ? 0.45 : (busyId === r.id ? 0.6 : 1) } },
+            return React.createElement("div", { key: r.id, style: { display: 'grid', gridTemplateColumns: '1fr 140px 70px 110px 30px', gap: 10, alignItems: 'center', padding: '8px 16px', borderBottom: `1px solid ${C.line}`, opacity: r.active === false ? 0.45 : (busyId === r.id ? 0.6 : 1) } },
                 React.createElement("input", { defaultValue: r.label || '', disabled: locked, onBlur: e => { if (e.target.value.trim() && e.target.value !== r.label) save(r.id, { label: e.target.value.trim() }); }, style: Object.assign(Object.assign({}, inputStyle()), { fontSize: 13, border: '1px solid transparent', background: 'transparent', padding: '4px 6px' }), onFocus: e => { e.target.style.border = `1px solid ${C.cord}`; e.target.style.background = C.white; }, onBlurCapture: e => { e.target.style.border = '1px solid transparent'; e.target.style.background = 'transparent'; } }),
                 React.createElement("span", { style: { fontSize: 11, color: C.mist, fontFamily: "'DM Mono', monospace" } }, r.value,
                     locked && React.createElement("span", { title: "System entry — referenced by app behaviour", style: { marginLeft: 6, fontSize: 8.5, fontWeight: 700, color: C.muted, background: C.bg, border: `1px solid ${C.line}`, padding: '1px 6px', borderRadius: 8, textTransform: 'uppercase' } }, "system"),
                     extraCols && extraCols(r)),
                 React.createElement("input", { type: "number", defaultValue: r.sort_order || 0, disabled: locked, onBlur: e => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v !== r.sort_order) save(r.id, { sort_order: v }); }, title: "Sort order", style: Object.assign(Object.assign({}, inputStyle()), { fontSize: 12, padding: '4px 6px' }) }),
-                React.createElement("button", { onClick: () => !locked && save(r.id, { active: r.active === false }), disabled: locked, style: { padding: '4px 10px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', borderRadius: 3, cursor: locked ? 'default' : 'pointer', fontFamily: 'inherit', border: `1px solid ${r.active === false ? C.line : C.cordMid}`, background: r.active === false ? C.bg : C.cordSoft, color: r.active === false ? C.muted : C.cord } }, r.active === false ? 'Inactive · enable' : 'Active · disable'));
+                React.createElement("button", { onClick: () => !locked && save(r.id, { active: r.active === false }), disabled: locked, style: { padding: '4px 10px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', borderRadius: 3, cursor: locked ? 'default' : 'pointer', fontFamily: 'inherit', border: `1px solid ${r.active === false ? C.line : C.cordMid}`, background: r.active === false ? C.bg : C.cordSoft, color: r.active === false ? C.muted : C.cord } }, r.active === false ? 'Inactive · enable' : 'Active · disable'), React.createElement("button", { onClick: () => remove(r), title: "Remove permanently", disabled: busyId === r.id, style: { background: 'transparent', border: 'none', cursor: 'pointer', color: C.mist, fontSize: 14, lineHeight: 1, padding: 4, fontFamily: 'inherit' }, onMouseEnter: e => e.currentTarget.style.color = '#B83A2E', onMouseLeave: e => e.currentTarget.style.color = C.mist }, "\u00D7"));
         })));
 }
 function AdminView({ currentUser, profile, users, onUsersChanged, onNavigate }) {
@@ -2803,7 +2877,7 @@ function AdminView({ currentUser, profile, users, onUsersChanged, onNavigate }) 
             React.createElement("div", { style: { fontSize: 12.5, color: C.muted, marginTop: 4 } }, "People, invitations, configuration and the audit trail — senior access only.")),
         React.createElement("div", { style: { display: 'flex', borderBottom: `1px solid ${C.line}`, marginBottom: 20 } }, tabBtn('people', 'People'), tabBtn('organisation', 'Organisation'), tabBtn('audit', 'Audit log')),
         tab === 'people' && React.createElement(React.Fragment, null,
-            React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 5, marginBottom: 18, overflow: 'hidden' } },
+            React.createElement("div", { className: "bf-scrollx", style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 5, marginBottom: 18, overflow: 'hidden' } },
                 React.createElement("div", { style: { padding: '12px 16px', borderBottom: `2px solid ${C.cord}`, fontSize: 12, fontWeight: 700, color: C.ink, textTransform: 'uppercase', letterSpacing: '0.08em' } }, "Team members · ", allUsers.length),
                 allUsers.map(u => {
                     const isSelf = u.id === currentUser.id;
@@ -2817,7 +2891,7 @@ function AdminView({ currentUser, profile, users, onUsersChanged, onNavigate }) 
                         React.createElement("span", { style: { display: 'flex', gap: 4 } }, ['contributor', 'senior'].map(r => React.createElement("button", { key: r, onClick: () => !isSelf && u.role !== r && updateUser(u, { role: r }), disabled: isSelf, title: isSelf ? "You can't change your own role" : '', style: { flex: 1, padding: '4px 8px', fontSize: 9.5, fontWeight: 700, textTransform: 'capitalize', borderRadius: 3, cursor: isSelf ? 'default' : 'pointer', fontFamily: 'inherit', border: `1px solid ${u.role === r ? C.cord : C.line}`, background: u.role === r ? C.cord : C.white, color: u.role === r ? '#fff' : C.muted } }, r))),
                         React.createElement("button", { onClick: () => !isSelf && updateUser(u, { active: u.active === false }), disabled: isSelf, title: isSelf ? "You can't deactivate yourself" : 'Inactive users stay in records but leave all pickers', style: { padding: '4px 10px', fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', borderRadius: 3, cursor: isSelf ? 'default' : 'pointer', fontFamily: 'inherit', border: `1px solid ${u.active === false ? C.line : C.cordMid}`, background: u.active === false ? C.bg : C.cordSoft, color: u.active === false ? C.muted : C.cord } }, u.active === false ? 'Inactive · enable' : 'Active · disable'));
                 })),
-            React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 5, marginBottom: 18, overflow: 'hidden' } },
+            React.createElement("div", { className: "bf-scrollx", style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 5, marginBottom: 18, overflow: 'hidden' } },
                 React.createElement("div", { style: { padding: '12px 16px', borderBottom: `2px solid ${C.amber}` } },
                     React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: C.ink, textTransform: 'uppercase', letterSpacing: '0.08em' } }, "Invite someone"),
                     React.createElement("div", { style: { fontSize: 10.5, color: C.muted, marginTop: 3 } }, "When they sign up with this email they land in your organisation automatically, with the role and department you set here.")),
@@ -2843,7 +2917,7 @@ function AdminView({ currentUser, profile, users, onUsersChanged, onNavigate }) 
                         React.createElement("button", { onClick: () => revokeInvite(inv), style: { background: 'transparent', border: 'none', color: C.redStatus, cursor: 'pointer', fontSize: 10.5, fontWeight: 600, textDecoration: 'underline', fontFamily: 'inherit' } }, "Revoke"))))),
             React.createElement("div", { style: { fontSize: 11, color: C.mist, fontStyle: 'italic' } }, "Display names and initials are edited by each person on their profile, or via the profile editor in the header.")),
         tab === 'organisation' && React.createElement(React.Fragment, null,
-            React.createElement("div", { style: { padding: '10px 14px', background: C.amberLight, border: `1px solid ${C.amber}`, borderLeft: `3px solid ${C.amber}`, borderRadius: 4, fontSize: 12, color: '#7A5E12', marginBottom: 18 } }, "These tables drive configuration org-wide. Status labels, ordering and custom entries now feed the pipeline and status pickers directly (refresh to see changes); stage colours stay curated per built-in value, with custom statuses in a neutral cord chip."),
+            React.createElement("div", { style: { padding: '10px 14px', background: C.amberLight, border: `1px solid ${C.amber}`, borderLeft: `3px solid ${C.amber}`, borderRadius: 4, fontSize: 12, color: '#7A5E12', marginBottom: 18 } }, "Statuses and departments feed the whole app: the pipeline, status pickers, project team fields, note columns and meeting types (refresh to see changes). Disable or delete anything your organisation doesn\u2019t use \u2014 projects keep any values already saved. Stage colours stay curated per built-in value."),
             React.createElement(AdminConfigTable, { title: "Pipeline statuses", hint: "The stages a project moves through.", table: "org_statuses", rows: statuses, extraCols: (r) => r.is_closed && React.createElement("span", { style: { marginLeft: 6, fontSize: 8.5, fontWeight: 700, color: C.muted, background: C.bg, border: `1px solid ${C.line}`, padding: '1px 6px', borderRadius: 8, textTransform: 'uppercase' } }, "closed"), onReload: reload }),
             React.createElement(AdminConfigTable, { title: "Departments", hint: "Teams people belong to — drives pickers, meeting seeding and filters.", table: "org_departments", rows: departments, extraCols: null, onReload: reload }),
             React.createElement(AdminConfigTable, { title: "Key date categories", hint: "Categories for project key dates and tracker milestones.", table: "org_key_date_categories", rows: kdCats, extraCols: (r) => r.is_programme_driver && React.createElement("span", { style: { marginLeft: 6, fontSize: 8.5, fontWeight: 700, color: C.cord, background: C.cordSoft, padding: '1px 6px', borderRadius: 8, textTransform: 'uppercase' } }, "programme"), onReload: reload })),
@@ -3551,7 +3625,7 @@ function UserPickerField({ users, value, onChange, label, department, required, 
             e.currentTarget.style.background = C.bg; },
         onMouseLeave: e => { if (u.id !== value)
             e.currentTarget.style.background = 'transparent'; }
-    }, React.createElement("span", null, React.createElement("strong", { style: { color: C.cord, marginRight: 6, fontWeight: 700 } }, u.initials || '—'), u.display_name), u.department && React.createElement("span", { style: { fontSize: 10, fontWeight: 600, color: C.cord, background: C.cordSoft, padding: '1px 7px', borderRadius: 8 } }, (MEETING_TYPES[u.department] || { short: u.department }).short));
+    }, React.createElement("span", null, React.createElement("strong", { style: { color: C.cord, marginRight: 6, fontWeight: 700 } }, u.initials || '—'), u.display_name), u.department && React.createElement("span", { style: { fontSize: 10, fontWeight: 600, color: C.cord, background: C.cordSoft, padding: '1px 7px', borderRadius: 8 } }, deptLabel(u.department, (MEETING_TYPES[u.department] || { short: u.department }).short)));
     const trigger = selected
         ? React.createElement("span", { style: { display: 'flex', alignItems: 'center', gap: 8 } }, React.createElement("strong", { style: { color: C.cord, fontWeight: 700 } }, selected.initials || '—'), React.createElement("span", { style: { color: C.text } }, selected.display_name), selectedInactive && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: C.amber, background: C.amberLight, padding: '1px 6px', borderRadius: 8, textTransform: 'uppercase', letterSpacing: '0.06em' } }, "Inactive"))
         : React.createElement("span", { style: { color: C.mist, fontStyle: 'italic' } }, required ? "Select someone…" : "— None —");
@@ -3606,7 +3680,7 @@ function CollaboratorsField({ users, value, onChange, excludeUserId }) {
         open && addable.length > 0 && React.createElement("div", { style: { position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 100, maxHeight: 240, overflowY: 'auto' } },
             addable.map(u => React.createElement("button", { key: u.id, type: "button", onClick: () => add(u.id), style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', padding: '8px 12px', background: 'transparent', border: 'none', borderBottom: `1px solid ${C.line}`, cursor: 'pointer', fontSize: 13, color: C.text, fontFamily: "'DM Sans', system-ui, sans-serif" }, onMouseEnter: e => e.currentTarget.style.background = C.bg, onMouseLeave: e => e.currentTarget.style.background = 'transparent' },
                 React.createElement("span", null, React.createElement("strong", { style: { color: C.cord, marginRight: 6, fontWeight: 700 } }, u.initials || '\u2014'), u.display_name),
-                u.department && React.createElement("span", { style: { fontSize: 10, fontWeight: 600, color: C.cord, background: C.cordSoft, padding: '1px 7px', borderRadius: 8 } }, (MEETING_TYPES[u.department] || { short: u.department }).short)))));
+                u.department && React.createElement("span", { style: { fontSize: 10, fontWeight: 600, color: C.cord, background: C.cordSoft, padding: '1px 7px', borderRadius: 8 } }, deptLabel(u.department, (MEETING_TYPES[u.department] || { short: u.department }).short))))));
 }
 // ============================================================
 // PROJECT DASHBOARD VIEW
@@ -3633,12 +3707,12 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
     // Team rows config
     const TEAM_ROWS = [
         { label: 'Owner', field: 'owner_user_id', department: null },
-        { label: 'Pre-Con Lead', field: 'pre_con_lead_user_id', department: 'pre-con' },
-        { label: 'Designer', field: 'designer_user_id', department: 'design' },
-        { label: 'Technical Designer', field: 'technical_designer_user_id', department: 'technical' },
-        { label: 'Furniture Consultant', field: 'furniture_consultant_user_id', department: 'furniture' },
-        { label: 'Project Manager', field: 'project_manager_user_id', department: 'pm' },
-    ];
+        { label: deptLabel('pre-con', 'Pre-Con') + ' Lead', field: 'pre_con_lead_user_id', department: 'pre-con' },
+        { label: deptLabel('design', 'Designer'), field: 'designer_user_id', department: 'design' },
+        { label: deptLabel('technical', 'Technical Designer'), field: 'technical_designer_user_id', department: 'technical' },
+        { label: deptLabel('furniture', 'Furniture Consultant'), field: 'furniture_consultant_user_id', department: 'furniture' },
+        { label: deptLabel('pm', 'Project Manager'), field: 'project_manager_user_id', department: 'pm' },
+    ].filter(r => !r.department || deptEnabled(r.department));
     const handleTeamChange = async (field, newUserId) => {
         setSaving(field);
         try {
@@ -3691,7 +3765,7 @@ function ProjectDashboardView({ projectId, projects, users, latestNotes, keyDate
         return React.createElement("div", { key: row.field, style: { display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'center', gap: 12, padding: '6px 0', borderBottom: `1px solid ${C.line}` } },
             React.createElement("div", { style: { fontSize: 11, color: C.muted, fontWeight: 500 } }, row.label),
             u
-                ? React.createElement("span", { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.text } }, React.createElement("strong", { style: { color: C.cord, fontWeight: 700 } }, u.initials || '\u2014'), u.display_name, u.department && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: C.cord, background: C.cordSoft, padding: '1px 7px', borderRadius: 8, textTransform: 'uppercase', letterSpacing: '0.05em' } }, (MEETING_TYPES[u.department] || { short: u.department }).short))
+                ? React.createElement("span", { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.text } }, React.createElement("strong", { style: { color: C.cord, fontWeight: 700 } }, u.initials || '\u2014'), u.display_name, u.department && React.createElement("span", { style: { fontSize: 9, fontWeight: 700, color: C.cord, background: C.cordSoft, padding: '1px 7px', borderRadius: 8, textTransform: 'uppercase', letterSpacing: '0.05em' } }, deptLabel(u.department, (MEETING_TYPES[u.department] || { short: u.department }).short)))
                 : React.createElement("span", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic' } }, 'Unassigned'));
     }))))), 
     // Module Status placeholder block
@@ -3741,7 +3815,7 @@ function NewProjectModal({ onClose, onCreate, users }) {
             setBusy(false);
         }
     };
-    return (React.createElement("div", { className: "bf-overlay", onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { className: "bf-modal", onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 560 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "New project"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Project name *" }, React.createElement("input", { value: form.name, onChange: handle('name'), required: true, style: inputStyle(), autoFocus: true })), React.createElement(Field, { label: "Project number *" }, React.createElement("input", { value: form.project_number, onChange: handle('project_number'), required: true, style: inputStyle(), placeholder: "e.g. 26342" })), React.createElement(Field, { label: "Address" }, React.createElement("input", { value: form.address, onChange: handle('address'), style: inputStyle(), placeholder: "e.g. 14 Wardour Street, London W1D 6QE" })), React.createElement(Field, { label: "Status" }, React.createElement("select", { value: form.status, onChange: handle('status'), style: inputStyle() }, STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label)))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Owner" }, React.createElement(UserPickerField, { users: users, value: form.owner_user_id, onChange: setUser('owner_user_id'), department: null, required: true, allowClear: false })), React.createElement(Field, { label: "Pre-Con Lead" }, React.createElement(UserPickerField, { users: users, value: form.pre_con_lead_user_id, onChange: setUser('pre_con_lead_user_id'), department: 'pre-con', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Designer" }, React.createElement(UserPickerField, { users: users, value: form.designer_user_id, onChange: setUser('designer_user_id'), department: 'design', allowClear: true })), React.createElement(Field, { label: "Technical Designer" }, React.createElement(UserPickerField, { users: users, value: form.technical_designer_user_id, onChange: setUser('technical_designer_user_id'), department: 'technical', allowClear: true }))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Project Manager" }, React.createElement(UserPickerField, { users: users, value: form.project_manager_user_id, onChange: setUser('project_manager_user_id'), department: 'pm', allowClear: true })), React.createElement(Field, { label: "Furniture Consultant" }, React.createElement(UserPickerField, { users: users, value: form.furniture_consultant_user_id, onChange: setUser('furniture_consultant_user_id'), department: 'furniture', allowClear: true }))), error && React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 10, borderRadius: 4, fontSize: 13, marginBottom: 14, borderLeft: `3px solid ${C.redStatus}` } }, error), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Creating…' : 'Create project'))))));
+    return (React.createElement("div", { className: "bf-overlay", onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } }, React.createElement("div", { className: "bf-modal", onClick: (e) => e.stopPropagation(), style: { background: C.white, borderRadius: 10, padding: 28, width: '100%', maxWidth: 560 } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 } }, React.createElement("h2", { style: { margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 20, color: C.ink, letterSpacing: '0.02em', fontWeight: 700 } }, "New project"), React.createElement("button", { onClick: onClose, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, fontSize: 20, color: C.muted } }, "\u2715")), React.createElement("form", { onSubmit: submit }, React.createElement(Field, { label: "Project name *" }, React.createElement("input", { value: form.name, onChange: handle('name'), required: true, style: inputStyle(), autoFocus: true })), React.createElement(Field, { label: "Project number *" }, React.createElement("input", { value: form.project_number, onChange: handle('project_number'), required: true, style: inputStyle(), placeholder: "e.g. 26342" })), React.createElement(Field, { label: "Address" }, React.createElement("input", { value: form.address, onChange: handle('address'), style: inputStyle(), placeholder: "e.g. 14 Wardour Street, London W1D 6QE" })), React.createElement(Field, { label: "Status" }, React.createElement("select", { value: form.status, onChange: handle('status'), style: inputStyle() }, STATUSES.map(s => React.createElement("option", { key: s.value, value: s.value }, s.label)))), React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } }, React.createElement(Field, { label: "Owner" }, React.createElement(UserPickerField, { users: users, value: form.owner_user_id, onChange: setUser('owner_user_id'), department: null, required: true, allowClear: false })), deptEnabled('pre-con') && React.createElement(Field, { label: deptLabel('pre-con', 'Pre-Con') + " Lead" }, React.createElement(UserPickerField, { users: users, value: form.pre_con_lead_user_id, onChange: setUser('pre_con_lead_user_id'), department: 'pre-con', allowClear: true })), deptEnabled('design') && React.createElement(Field, { label: deptLabel('design', 'Designer') }, React.createElement(UserPickerField, { users: users, value: form.designer_user_id, onChange: setUser('designer_user_id'), department: 'design', allowClear: true })), deptEnabled('technical') && React.createElement(Field, { label: deptLabel('technical', 'Technical Designer') }, React.createElement(UserPickerField, { users: users, value: form.technical_designer_user_id, onChange: setUser('technical_designer_user_id'), department: 'technical', allowClear: true })), deptEnabled('pm') && React.createElement(Field, { label: deptLabel('pm', 'Project Manager') }, React.createElement(UserPickerField, { users: users, value: form.project_manager_user_id, onChange: setUser('project_manager_user_id'), department: 'pm', allowClear: true })), deptEnabled('furniture') && React.createElement(Field, { label: deptLabel('furniture', 'Furniture Consultant') }, React.createElement(UserPickerField, { users: users, value: form.furniture_consultant_user_id, onChange: setUser('furniture_consultant_user_id'), department: 'furniture', allowClear: true }))), error && React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 10, borderRadius: 4, fontSize: 13, marginBottom: 14, borderLeft: `3px solid ${C.redStatus}` } }, error), React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } }, React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"), React.createElement("button", { type: "submit", disabled: busy, style: Object.assign(Object.assign({}, btnPrimary()), { opacity: busy ? 0.5 : 1 }) }, busy ? 'Creating…' : 'Create project'))))));
 }
 // ============================================================
 // PROFILE MODAL — edit display name & initials (and more for seniors)
@@ -3866,7 +3940,7 @@ function MeetingsListView({ meetings, projects, users, isSenior, canSeePreCon, p
     // they don't appear twice.
     const normalisedMeetings = meetings.map(m => (Object.assign(Object.assign({}, m), { meeting_type: m.meeting_type === 'master-resource' ? 'pre-con' : m.meeting_type })));
     const visibleMeetings = normalisedMeetings.filter(m => (m.meeting_type === 'pre-con' ? canSeePreCon : true) && m.status !== 'in-progress');
-    const typeOrder = ['pre-con', 'design', 'technical', 'furniture', 'pm'];
+    const typeOrder = ['pre-con', 'design', 'technical', 'furniture', 'pm'].filter(t => { const entry = Object.entries(DEPT_BINDINGS).find(([, b]) => b.meetingType === t); return entry ? deptEnabled(entry[0]) : true; });
     const groupedMeetings = {};
     visibleMeetings.forEach(m => {
         if (!groupedMeetings[m.meeting_type])
@@ -3899,7 +3973,7 @@ function MeetingsListView({ meetings, projects, users, isSenior, canSeePreCon, p
             background: C.white, border: `1px solid ${C.line}`,
             borderRadius: 3, boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
             zIndex: 50, minWidth: 220, overflow: 'hidden',
-        } }, React.createElement("div", { style: { padding: '8px 14px', background: C.grip, fontSize: 9, color: 'rgba(232,234,232,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' } }, "Select meeting type"), [...new Set(MEETING_TYPE_OPTIONS.map(o => o.category))].map(cat => React.createElement("div", { key: cat }, React.createElement("div", { style: { padding: '6px 14px', background: C.cordSoft, fontSize: 8.5, color: C.cord, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', borderBottom: `1px solid ${C.cordMid}` } }, cat), MEETING_TYPE_OPTIONS.filter(o => o.category === cat).map(opt => React.createElement("button", { key: opt.value, onClick: () => handleCreate(opt.value), style: {
+        } }, React.createElement("div", { style: { padding: '8px 14px', background: C.grip, fontSize: 9, color: 'rgba(232,234,232,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' } }, "Select meeting type"), [...new Set(enabledMeetingTypeOptions().map(o => o.category))].map(cat => React.createElement("div", { key: cat }, React.createElement("div", { style: { padding: '6px 14px', background: C.cordSoft, fontSize: 8.5, color: C.cord, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', borderBottom: `1px solid ${C.cordMid}` } }, cat), enabledMeetingTypeOptions().filter(o => o.category === cat).map(opt => React.createElement("button", { key: opt.value, onClick: () => handleCreate(opt.value), style: {
             display: 'block', width: '100%', textAlign: 'left',
             padding: '11px 14px', background: 'transparent',
             border: 'none', borderBottom: `1px solid ${C.line}`,
@@ -4924,12 +4998,12 @@ function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly,
         const resolve = (uid) => uid && uById[uid] ? uById[uid].initials : '';
         return [
             { label: 'Owner', field: 'owner_user_id', value: resolve(project.owner_user_id) },
-            { label: 'Pre-Con', field: 'pre_con_lead_user_id', value: resolve(project.pre_con_lead_user_id) },
-            { label: 'Design', field: 'designer_user_id', value: resolve(project.designer_user_id) },
-            { label: 'Tech', field: 'technical_designer_user_id', value: resolve(project.technical_designer_user_id) },
-            { label: 'Furniture', field: 'furniture_consultant_user_id', value: resolve(project.furniture_consultant_user_id) },
-            { label: 'PM', field: 'project_manager_user_id', value: resolve(project.project_manager_user_id) },
-        ];
+            { label: deptLabel('pre-con', 'Pre-Con'), field: 'pre_con_lead_user_id', value: resolve(project.pre_con_lead_user_id) },
+            { label: deptLabel('design', 'Design'), field: 'designer_user_id', value: resolve(project.designer_user_id) },
+            { label: deptLabel('technical', 'Tech'), field: 'technical_designer_user_id', value: resolve(project.technical_designer_user_id) },
+            { label: deptLabel('furniture', 'Furniture'), field: 'furniture_consultant_user_id', value: resolve(project.furniture_consultant_user_id) },
+            { label: deptLabel('pm', 'PM'), field: 'project_manager_user_id', value: resolve(project.project_manager_user_id) },
+        ].filter(r => teamFieldEnabled(r.field));
     })().filter(r => r.value).map(r => {
         const isHighlighted = r.field === cfg.groupField;
         return (React.createElement("span", { key: r.field, style: {
@@ -4998,7 +5072,7 @@ function ProjectCapturePane({ project, entry, projectActions, users, isReadOnly,
     }))))), React.createElement("div", { style: { marginBottom: 16 } }, React.createElement("button", { onClick: () => setShowKeyDates(s => !s), style: { display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', fontSize: 10, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans', system-ui, sans-serif" } }, React.createElement("span", { style: { display: 'inline-block', transform: showKeyDates ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', fontSize: 9 } }, "\u25B6"), showKeyDates ? "Hide key dates" : "Show key dates", (keyDates && keyDates.length > 0) && React.createElement("span", { style: { color: C.mist, fontWeight: 500 } }, ` (${keyDates.length})`)), showKeyDates && React.createElement("div", { style: { marginTop: 10 } }, React.createElement(KeyDatesSection, { project: project, keyDates: keyDates || [], isSenior: isSenior, currentUser: currentUser, users: users, meetingCfg: meetingCfg, onKeyDatesChange: onKeyDatesChange }))), React.createElement("div", { style: { marginTop: 28, paddingTop: 4 } }, React.createElement("div", { style: { height: 3, background: C.fog, borderRadius: 2, marginBottom: 20 } }), React.createElement("div", { style: { background: C.bg, border: `1px solid ${C.line}`, borderRadius: 8, overflow: 'hidden' } }, React.createElement("div", { style: { padding: '14px 18px', borderBottom: `1px solid ${C.line}` } }, React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: projectActions.length > 0 ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.prussian, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Actions (", projectActions.length, ")"), !isReadOnly && (React.createElement("button", { onClick: onAddAction, style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11, padding: '6px 12px' }) }, "+ Add action"))), projectActions.length === 0 ? (React.createElement("div", { style: { fontSize: 12, color: C.mist, fontStyle: 'italic', padding: '4px 0' } }, "No actions raised for this project this meeting.")) : (React.createElement("div", { style: { background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, overflow: 'hidden' } }, projectActions.map(a => (React.createElement(ActionRow, { key: a.id, action: a, users: users, projects: [project], isReadOnly: isReadOnly, onUpdate: onUpdateAction, onDelete: onDeleteAction, compact: true, collaborators: (collaboratorsByAction && collaboratorsByAction[a.id]) || [], currentUser: currentUser, openQuery: (queriesByAction && queriesByAction[a.id]) || null, onRaiseQuery: onRaiseQuery, onAnswerQuery: onAnswerQuery })))))), React.createElement("div", { style: { padding: '14px 18px' } }, (() => {
         const outgoing = (handoffs || []).filter(h => h.from_meeting_type === meetingType && h.to_department !== meetingType);
         return React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: (outgoing.length > 0 || showHandoffForm) ? 10 : 6 } }, React.createElement("div", { style: { fontSize: 11, fontWeight: 700, color: C.cord, textTransform: 'uppercase', letterSpacing: '0.1em' } }, "Flagged for other teams (", outgoing.length, ")"), !isReadOnly && !showHandoffForm && (React.createElement("button", { onClick: () => { setShowHandoffForm(true); setHandoffDept(''); setHandoffNote(''); }, style: { background: 'transparent', border: `1px solid ${C.cordMid}`, color: C.cord, borderRadius: 3, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif", display: 'flex', alignItems: 'center', gap: 6 } }, React.createElement("span", null, "\u2691"), "Flag for another team")));
-    })(), showHandoffForm && (React.createElement("div", { style: { background: C.cordSoft, border: `1px solid ${C.cordMid}`, borderRadius: 4, padding: 14, marginBottom: 12 } }, React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 8 } }, "This surfaces as a callout when that team's meeting next opens this project. Their chair can acknowledge it or convert it to an action."), React.createElement("div", { style: { marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4, fontWeight: 600 } }, "Which team?"), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, MEETING_TYPE_OPTIONS.filter(o => o.value !== meetingType).map(o => (React.createElement("button", { key: o.value, onClick: () => setHandoffDept(o.value), style: { padding: '5px 10px', fontSize: 11, fontWeight: 600, borderRadius: 3, cursor: 'pointer', border: `1px solid ${handoffDept === o.value ? C.cord : C.line}`, background: handoffDept === o.value ? C.cord : C.white, color: handoffDept === o.value ? '#fff' : C.text, fontFamily: "'DM Sans', system-ui, sans-serif" } }, o.label.replace(' Meeting', '')))))), React.createElement("textarea", { value: handoffNote, onChange: e => setHandoffNote(e.target.value), placeholder: "What does that team need to know or do?", rows: 3, style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', resize: 'vertical', marginBottom: 8 }) }), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("button", { onClick: () => { if (handoffDept && handoffNote.trim()) {
+    })(), showHandoffForm && (React.createElement("div", { style: { background: C.cordSoft, border: `1px solid ${C.cordMid}`, borderRadius: 4, padding: 14, marginBottom: 12 } }, React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 8 } }, "This surfaces as a callout when that team's meeting next opens this project. Their chair can acknowledge it or convert it to an action."), React.createElement("div", { style: { marginBottom: 8 } }, React.createElement("div", { style: { fontSize: 10, color: C.muted, marginBottom: 4, fontWeight: 600 } }, "Which team?"), React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } }, enabledMeetingTypeOptions().filter(o => o.value !== meetingType).map(o => (React.createElement("button", { key: o.value, onClick: () => setHandoffDept(o.value), style: { padding: '5px 10px', fontSize: 11, fontWeight: 600, borderRadius: 3, cursor: 'pointer', border: `1px solid ${handoffDept === o.value ? C.cord : C.line}`, background: handoffDept === o.value ? C.cord : C.white, color: handoffDept === o.value ? '#fff' : C.text, fontFamily: "'DM Sans', system-ui, sans-serif" } }, o.label.replace(' Meeting', '')))))), React.createElement("textarea", { value: handoffNote, onChange: e => setHandoffNote(e.target.value), placeholder: "What does that team need to know or do?", rows: 3, style: Object.assign(Object.assign({}, inputStyle()), { width: '100%', resize: 'vertical', marginBottom: 8 }) }), React.createElement("div", { style: { display: 'flex', gap: 6 } }, React.createElement("button", { onClick: () => { if (handoffDept && handoffNote.trim()) {
             onCreateHandoff(project.id, handoffDept, handoffNote);
             setShowHandoffForm(false);
         } }, disabled: !handoffDept || !handoffNote.trim(), style: Object.assign(Object.assign({}, btnPrimary()), { fontSize: 11, opacity: (!handoffDept || !handoffNote.trim()) ? 0.4 : 1 }) }, "Send flag"), React.createElement("button", { onClick: () => setShowHandoffForm(false), style: Object.assign(Object.assign({}, btnSecondary()), { fontSize: 11 }) }, "Cancel")))), (() => {
@@ -5222,13 +5296,11 @@ function ProjectEditModal({ project, users, onSave, onClose }) {
                 React.createElement("div", { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.muted, margin: '18px 0 10px', paddingBottom: 6, borderBottom: `1px solid ${C.line}` } }, "Project team"),
                 React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } },
                     pickerRow('Owner *', 'owner_user_id', null, true),
-                    pickerRow('Pre-Con Lead', 'pre_con_lead_user_id', 'pre-con')),
-                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } },
-                    pickerRow('Designer', 'designer_user_id', 'design'),
-                    pickerRow('Technical Designer', 'technical_designer_user_id', 'technical')),
-                React.createElement("div", { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } },
-                    pickerRow('Project Manager', 'project_manager_user_id', 'pm'),
-                    pickerRow('Furniture Consultant', 'furniture_consultant_user_id', 'furniture')),
+                    deptEnabled('pre-con') && pickerRow(deptLabel('pre-con', 'Pre-Con') + ' Lead', 'pre_con_lead_user_id', 'pre-con'),
+                    deptEnabled('design') && pickerRow(deptLabel('design', 'Designer'), 'designer_user_id', 'design'),
+                    deptEnabled('technical') && pickerRow(deptLabel('technical', 'Technical Designer'), 'technical_designer_user_id', 'technical'),
+                    deptEnabled('pm') && pickerRow(deptLabel('pm', 'Project Manager'), 'project_manager_user_id', 'pm'),
+                    deptEnabled('furniture') && pickerRow(deptLabel('furniture', 'Furniture Consultant'), 'furniture_consultant_user_id', 'furniture')),
                 error && React.createElement("div", { style: { background: C.redStatusLight, color: C.redStatus, padding: 10, borderRadius: 4, fontSize: 13, marginBottom: 14, borderLeft: `3px solid ${C.redStatus}` } }, error),
                 React.createElement("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } },
                     React.createElement("button", { type: "button", onClick: onClose, style: btnSecondary() }, "Cancel"),
